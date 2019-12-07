@@ -1,0 +1,5 @@
+<launch>
+	<node name="tf_floor" type="static_transform_publisher" pkg="tf" output="screen" args="0 0 0 0 -1.57 1.57 /base_footprint /mounted_wall 50" />
+	<node name="tf_sensor" type="static_transform_publisher" pkg="tf" output="screen" args="0 0 0 0 0 0 /mounted_wall /camera_link 50" />
+	<node name="kinect_transform_node" type="kinect_transform_node" pkg="frame_transform" />
+</launch>
