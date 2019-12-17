@@ -24,40 +24,6 @@ import torchvision.transforms as transforms
 
 class PickPushCollection(Policy):
 
-    def analyze_pc_clusters(self, pc, KP):
-        db1 = DBSCAN(eps=.001, min_samples=3,
-                     n_jobs=-1).fit(pc)
-        # Number of clusters in labels, ignoring noise if present.
-        n1_clusters = len(set(db1.labels_)) - (1 if -1 in db1.labels_ else 0)
-        print("DBSCAN: # ", n1_clusters)
-        cluster_centers = []
-        cluster_shapes = []
-        cluster_KPs = []
-        kp = KP.get_kp() 
-
-        for cluster in set(db1.labels):
-          if cluster != -1:
-            running_sum = np.array([0.0, 0.0, 0.0])
-            counter = 0
-            cluster_kp = []
-            cluster_shape = []
-            for i in range(pc.shape[0]):
-                if db1.labels[i] == cluster:
-                    running_sum += pc[i]
-                    counter += 1
-                    cluster_shape.append(pc[i])
-                    if [pc[i][0], pc[i][1]] in kp:
-                      cluster_kp.append(pc[i])
-                      print("kp found in cluster")
-            center = running_sum / counter
-            cluster_centers.append(center)
-            cluster_KPs.append(found_kp)
-            cluster_shapes.append(cluster_shape)
-        return [pc, KP, counter, cluster_centers, cluster_KPs, cluster_shapes]
-
-    def compare_clusters(self, state1, state2):
-      pass
-
     def compare_states(self, state1, state2):
       pass
 
@@ -68,6 +34,8 @@ class PickPushCollection(Policy):
     def plan_grasp(self, rgb, pc):
         def take_z_axis(elem):
           return elem[2]
+
+
         pc1 = sorted(pc, key=take_z_axis)
         # print("old pc[0]: ", pc[0])
         # print("new pc[0]: ", pc1[0])
@@ -90,6 +58,9 @@ class PickPushCollection(Policy):
           # self.keypoints = KP.get_kp
           kp_pc_points = KP.kp_to_3d_point(pc)
           KP.publish_pc(pc)
+        else:
+          KP = None
+        clusters.analyze_pc(pc, KP)
 
         evaluated  = None
         grasps = None     #  x, y, z, theta, probabilities = grasp
@@ -235,101 +206,111 @@ class PickPushCollection(Policy):
           for n_i, n in enumerate(neighbors):
             if n not in evaluated:
               evaluated.append(n)
-        return self.assign_grasp_confidence(grasps)
+
+        grasp_conf = self.assign_grasp_confidence(grasps)
+        clusters.assign_grasps(grasp_conf)
+        return grasp_conf
 
     def assign_grasp_confidence(self, grasps):
         if grasps is None or len(grasps) == 0:
           return None
+        # else base on interesting clusters
+        # prioritize the top center of cluster
         else:
           prob = 1 / len(grasps)
           return [((g[0], g[1], g[2], g[3]), prob) for i,g in enumerate(grasps)]
 
-    def __init__(self):
+    def evaluate_drop(self, grasp, grasps, position, e_i, a_i):
+      # did the cluster move after being dropped?
+      # ensure that the gripper is or can be closed
+
+    def evaluate_grasp(self, grasp, grasps, position, e_i, a_i):
+        # ISOLATE until YOLO is trained
+        self.action_mode = "ISOLATE"     # ISOLATE, INTERACT, CURIOSITY
+
+        eval_grasp_action = {}
+        pose = self.get_pose()
+        eval_grasp_action['EVA_POSE'] = [pose[0],pose[1],pose[2],pose[3]]
+        eval_grasp_action['EVA_NEW_POSE'] = [pose[0],pose[1],pose[2],pose[3]]
+        eval_grasp_action['EVA_SUCCESS'], eval_grasp_action['EVA_CLOSURE'] = self.widowx.eval_grasp(manual=manual)
+
+        if eval_grasp_action['EVA_SUCCESS']:
+          print("successful grasp: ",  eval_grasp_action['EVA_CLOSURE'])
+          cluster_id = cluster.cluster_contains(grasp)
+          if cluster.is_isolated():
+            deg_horiz, flip = cluster.rotate_angle()
+            if deg_horiz != None:
+              eval_grasp_action['EVA_ACTION'] = "ROTATE"
+              eval_grasp_action['EVA_DEG'] = deg_horiz
+            elif flip:
+              eval_grasp_action['EVA_ACTION'] = "FLIP"
+            else:
+              if cluster.get_action_mode() == "ISOLATED":
+                cluster.analyze_object()
+                cluster.set_action_mode("INTERACT")
+                eval_grasp_action['EVA_ACTION'] = "RANDOM_DROP"
+          elif self.action_mode == "ISOLATE":
+            eval_grasp_action['EVA_ACTION'] = "ISOLATED_DROP"
+            eval_grasp_action['EVA_REWARD'] = 1
+          # else look cluster interaction using AIMED_DROP
+          else
+            eval_grasp_action['EVA_ACTION'] = "RANDOM_DROP"
+            eval_grasp_action['EVA_REWARD'] = 1
+        elif iterator == 2:
+          eval_grasp_action['EVA_ACTION'] = "EVAL_WORLD_ACTION"
+        elif iterator == 3:
+          if eval_world_action['EWA_STATE'] = "UNCHANGED":
+            eval_grasp_action['EVA_ACTION'] = "RETRY_GRASP"
+            eval_grasp_action['EVA_REWARD'] = 0
+            new_x += (random() * 2 - 1) * INCH
+            new_y += (random() * 2 - 1) * INCH
+            new_z += (random() * 2 - 1) * INCH
+            # new_theta unchanged (?)
+          elif eval_world_action['EWA_STATE'] = "MOVED":
+            eval_grasp_action['EVA_ACTION'] = "NO_DROP"
+            eval_grasp_action['EVA_REWARD'] = eval_world_action['REWARD'] 
+        elif iterator == 4:
+          r = random()
+          if r < .25:
+            # try a new grasp from list
+            eval_grasp_action['EVA_ACTION'] = "GRASP"
+          elif r < .5:
+            eval_grasp_action['EVA_ACTION'] = "RETRY_GRASP"
+            new_x += (random() * 2 - 1) * INCH
+            new_y += (random() * 2 - 1) * INCH
+            new_z += (random() * 2 - 1) * INCH
+          elif r < .75:
+            eval_grasp_action['EVA_ACTION'] = "EVAL_WORLD_ACTION"
+          else:
+            eval_grasp_action['EVA_ACTION'] = "PUSH"
+            _,_,_, cur_theta = eval_grasp_action['EVA_POSE']
+            eval_grasp_action['EVA_DEG'] = cur_theta
+        elif iterator % 5 == 0 and iterator < 20:
+          self.grasp_hist.append(grasp)
+          eval_grasp_action['EVA_ACTION'] = "RETRY_GRASP"
+          print("unsuccessful grasp: ", eval_grasp_action['EVA_CLOSURE'])
+        elif iterator < ::
+          eval_grasp_action['EVA_ACTION'] = "NO_DROP"
+          print("unsuccessful grasp2: ", eval_grasp_action['EVA_CLOSURE'])
+        # compare keypoints for planned object
+        # see if attempted grab of object moved associated keypoints or cluster
+        # full credit if grabbed/lifted
+        # partial credit if moved
+        # no credit / retry with different grasp for same object if untouched
+
+        # if not moved, provide attempted grab, current pose, 3d picture to
+        # reinforcement learning NN. Bound move.
+        return eval_grasp_action
+
+    def evaluate_world(self, grasp, grasps, position, e_i, a_i):
+        success, closure = self.widowx.eval_grasp(manual=manual)
+        # T, distances, i = icp(A, B)   # nxM matrices
+        # look for differences
+        return success
+
+    def __init__(self, event_history):
+        clusters = clusterState()
         recent_grasps = None
       
 
 
-class PickPushCurious(Policy):
-    '''
-    Implementation of Pinto 2016
-    Details found here: https://arxiv.org/pdf/1509.06825.pdf
-    '''
-
-    def __init__(self, model_path=None, heightmaps=False):
-        self.net = PintoGuptaNet(depth=False, binned_output=True).cuda()
-        self.net = nn.DataParallel(self.net).cuda()
-        self.net.load_state_dict(torch.load(model_path),strict=False)
-        self.net.eval()
-        self.resize = make_resize_rgb(227, 227)
-
-        self.K = DEPTH_K
-
-        self.cm = CALIBRATION_MATRIX
-
-        self.inv_cm = np.linalg.inv(self.cm)
-
-    def calculate_crops(self, grasps):
-        grasps = np.concatenate([grasps, np.ones((len(grasps), 1))], axis=1)
-        camera_points = np.dot(self.inv_cm, grasps.T)[:3]
-        camera_points = (camera_points.T + np.array([0.026, 0.001, 0.004])).T
-        pixel_points = np.dot(self.K, camera_points / camera_points[2:])[:2].T
-        return pixel_points.astype(int)
-
-    def plan_grasp(self, rgbd, pc, num_grasps=256, batch_size=128):
-        rgb = rgbd[:, :, :3].astype(np.uint8)
-        _, labels = compute_blobs(pc)
-
-        blobs = []
-        for label in set(labels):
-            if label == -1:
-                continue
-            blob_points = pc[labels == label]
-            index = np.random.randint(0, len(blob_points))
-            blobs.append(blob_points[index])
-
-        all_grasps = []
-        all_probabilities = []
-        all_crops = []
-
-        for blob in blobs:
-            blob = np.concatenate([blob, [0.]], axis=0)
-            blob[2] = Z_MIN
-
-            candidates = []
-            probabilities = []
-            cropss = []
-
-            for i in range(num_grasps // batch_size):
-                noise = np.random.uniform([-XY_NOISE, -XY_NOISE, -.02, -1.57], [XY_NOISE, XY_NOISE, 0.0, 1.57],
-                                          (batch_size, 4))
-                grasps = noise + blob
-                candidates.append(grasps)
-
-                crops = self.calculate_crops(grasps[:, :3])
-
-                cropped = []
-                for crop in crops:
-                    img = crop_image(rgb, crop, 48)
-                    cropped.append(self.resize(img))
-
-                cropss.append(crops)
-
-                rgbs = torch.stack(cropped).cuda()
-                grasps = torch.tensor(grasps, dtype=torch.float).cuda()
-
-                output = self.net.forward((rgbs, None, grasps))
-
-                probabilities.extend([sigmoid(k)
-                                      for k in output.detach().cpu().numpy()])
-            candidates = np.concatenate(candidates, axis=0)
-            best_indices = np.argsort(probabilities)[-5:]
-            best_index = np.random.choice(best_indices)
-            cropss = np.concatenate(cropss, axis=0)
-
-            all_crops.append(cropss[best_index])
-            all_grasps.append(candidates[best_index])
-            all_probabilities.append(probabilities[best_index])
-
-        all_grasps = np.array(all_grasps)
-
-        return [(grasp, all_probabilities[i]) for i, grasp in enumerate(all_grasps)]

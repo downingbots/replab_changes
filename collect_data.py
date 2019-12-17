@@ -134,7 +134,8 @@ def main():
             if args.method == 'pickpush':
               print("Publish grasps")
               executor.publish_grasps(grasps, grasp)
-              success, err = executor.execute_grasp(grasp)
+              executor.record_grasp(grasp, grasps)
+              success, err = executor.execute_grasp(grasp, grasps,confidences,  policy)
               # policy.evaluate_grasp(pc, pc_rgb, grasps, grasp, success, err)
               # todo: figure out if push was selected action and perform instead
               # success, err = executor.execute_push(push)

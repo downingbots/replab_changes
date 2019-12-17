@@ -45,30 +45,31 @@ from replab_core.utils import *
 # from replab_grasping.config_grasp import *
 from utils_grasp import *
 from config_grasp import *
-from keypoint import *
+from action_history import *
 
 class Executor:
 
     def __init__(self, scan=False, datapath='', save=False):
         # WidowX controller interface
         self.widowx = WidowX()
+        self.history = ActionHistory()
         self.transform = lambda x: x
         # For ROS/cv2 conversion
         self.bridge = CvBridge()
-        # self.keypoints = []
         self.rgb_ready = True
         self.pc_ready = True
         self.pc_count = 0
 
         # Register subscribers
-        self.img_subscriber = rospy.Subscriber(
+        if !RGB_DEPTH_FROM_PC:
+          self.img_subscriber = rospy.Subscriber(
             RGB_IMAGE_TOPIC, Image, self.update_rgb)
-        self.depth_subscriber = rospy.Subscriber(
+          self.depth_subscriber = rospy.Subscriber(
             DEPTH_IMAGE_TOPIC, Image, self.update_depth)
+          self.caminfo_subscriber = rospy.Subscriber(
+            DEPTH_CAMERA_INFO_TOPIC, CameraInfo, self.save_cinfo)
         self.pc_subscriber = rospy.Subscriber(
             POINTCLOUD_TOPIC, PointCloud2, self.update_pc)
-        self.caminfo_subscriber = rospy.Subscriber(
-            DEPTH_CAMERA_INFO_TOPIC, CameraInfo, self.save_cinfo)
 
         # Register cluster pub
         if DISPLAY_PC_RGB:
@@ -94,8 +95,13 @@ class Executor:
         self.evaluation_data = []
 
         # Store latest RGB-D
-        self.rgb = np.zeros((480, 640, 3))
-        self.depth = np.zeros((480, 640, 1))
+
+        if RGB_DEPTH_FROM_PC:
+          self.rgb = np.zeros((PC_HEIGHT, PC_WIDTH, 3))
+          self.depth = np.zeros((PC_HEIGHT, PC_WIDTH, 1))
+        else:
+          self.rgb = np.zeros((IMG_HEIGHT, IMG_WIDTH, 3))
+          self.depth = np.zeros((IMG_HEIGHT, IMG_WIDTH, 1))
         # ARD: orig:
         # self.pc = np.zeros((1, 3))
         self.pc = []                   # unmaterialized pc
@@ -113,7 +119,6 @@ class Executor:
             self.base_pc = np.load(PC_BASE_PATH)
         self.cm = CALIBRATION_MATRIX
         self.inv_cm = np.linalg.inv(self.cm)
-        self.sample = {}
         self.kdtree = KDTree(self.base_pc)
         self.recent_grasps = []
 
@@ -153,14 +158,19 @@ class Executor:
         self.camera_info = data
 
     def get_rgbd(self):
-        # old_depth = self.depth.astype(np.float) / 10000.
-        old_depth = self.depth.astype(np.float) 
-        # ARD
-        # print ("old_depth.shape ")
-        # print (old_depth.shape)    # (480, 640, 1)
-        depth = rectify_depth(old_depth)
-        depth = np.reshape(depth, (480, 640, 1))
-        return np.concatenate([self.rgb, depth], axis=2)
+        if RGB_DEPTH_FROM_PC:
+          depth = np.reshape(self.depth, (RGB_WIDTH, RGB_HEIGHT, 1))
+          return np.concatenate([self.rgb, depth], axis=2)
+          # return self.rgbd
+        else: # derived from original code
+          # old_depth = self.depth.astype(np.float) / 10000.
+          old_depth = self.depth.astype(np.float) 
+          # ARD
+          # print ("old_depth.shape ")
+          # print (old_depth.shape)    # (480, 640, 1)
+          depth = rectify_depth(old_depth)
+          depth = np.reshape(depth, (IMG_HEIGHT, IMG_WIDTH, 1))
+          return np.concatenate([self.rgb, depth], axis=2)
 
     def get_pose(self):
         pose = self.widowx.get_current_pose().pose
@@ -187,8 +197,8 @@ class Executor:
 
         # pc = np.array(self.pc)[:, :3]
         np.random.shuffle(pc)
-        if pc.shape[0] > 5000:
-            pc = pc[:5000]
+        if pc.shape[0] > PC_DENSITY:
+            pc = pc[:PC_DENSITY]
 
         def transform_pc(srcpc, tf_matrix):
             ones = np.ones((srcpc.shape[0], 1))
@@ -198,11 +208,20 @@ class Executor:
 
         pc = transform_pc(pc, self.cm)
 
-        self.sample['full_pc'] = pc
+        if RGB_DEPTH_FROM_PC:
+          self.rgb, self.depth = self.rgb_from_pc(pc)
+
+        # do further reduction
+        if pc.shape[0] > RGB_PC_DENSITY:
+          pc = pc[:RGB_PC_DENSITY]
+        if RGB_DEPTH_FROM_PC:
+          self.full_pc = pc
+          self.sample['full_pc'] = self.full_pc
 
         dist, _ = self.kdtree.query(pc, k=1)
         pc = [p for i, p in enumerate(pc) if inside_polygon(
             p, PC_BOUNDS, HEIGHT_BOUNDS) and dist[i] > .003]
+
         return np.reshape(pc, (len(pc), 3))
 
 
@@ -210,40 +229,43 @@ class Executor:
         return self.rgb
 
     def get_pc_rgb(self):
-        # ARD
-        # while (not self.pc_ready):
-        #   yield
-        prev_pc_cnt = -1
-        # different light structures get different results
-        while not self.pc_ready or prev_pc_cnt == self.pc_count:
-          print("not ready")
-          rospy.sleep(.1)
-        prev_pc_cnt = self.pc_count
-        self.pc_ready = False
-        self.full_pc = list(self.pc)
-        self.pc_ready = True
-        prev_pc_len = len(self.full_pc) 
-        # print("pc len: ", len(self.full_pc))
-        self.full_pc = np.array(self.full_pc)[:, :4]
-        # "atomically" evaluate generator
-        np.random.shuffle(self.full_pc)
-        if self.full_pc.shape[0] > PC_DENSITY:
-            self.full_pc = self.full_pc[:PC_DENSITY]
-        self.full_pc = np.array(self.full_pc)[:, :4]
-        self.full_pc_rgb = self.full_pc[:, 3]
-        # print("pc_rgb: ", self.full_pc_rgb)
-        self.full_pc = np.array(self.full_pc)[:, :3]
-
-        def transform_pc(srcpc, tf_matrix):
-            ones = np.ones((srcpc.shape[0], 1))
-            srcpc = np.append(srcpc, ones, axis=1)
-            out = np.dot(tf_matrix, srcpc.T)[:3]
-            return out.T
-
-        self.full_pc = transform_pc(self.full_pc, self.cm)
-        self.full_pc = np.array(self.full_pc)[:, :3]
-        self.sample['full_pc'] = self.full_pc
-
+        if RGB_DEPTH_FROM_PC:
+          self.full_pc_rgb = self.full_pc[:, 3]
+        else:
+          # ARD
+          # while (not self.pc_ready):
+          #   yield
+          prev_pc_cnt = -1
+          # different light structures get different results
+          while not self.pc_ready or prev_pc_cnt == self.pc_count:
+            print("not ready")
+            rospy.sleep(.1)
+          prev_pc_cnt = self.pc_count
+          self.pc_ready = False
+          self.full_pc = list(self.pc)
+          self.pc_ready = True
+          prev_pc_len = len(self.full_pc) 
+          # print("pc len: ", len(self.full_pc))
+          self.full_pc = np.array(self.full_pc)[:, :4]
+          # "atomically" evaluate generator
+          np.random.shuffle(self.full_pc)
+          if self.full_pc.shape[0] > PC_DENSITY:
+              self.full_pc = self.full_pc[:PC_DENSITY]
+          self.full_pc = np.array(self.full_pc)[:, :4]
+          self.full_pc_rgb = self.full_pc[:, 3]
+          # print("pc_rgb: ", self.full_pc_rgb)
+          self.full_pc = np.array(self.full_pc)[:, :3]
+  
+          def transform_pc(srcpc, tf_matrix):
+              ones = np.ones((srcpc.shape[0], 1))
+              srcpc = np.append(srcpc, ones, axis=1)
+              out = np.dot(tf_matrix, srcpc.T)[:3]
+              return out.T
+  
+          self.full_pc = transform_pc(self.full_pc, self.cm)
+          self.full_pc = np.array(self.full_pc)[:, :3]
+          self.sample['full_pc'] = self.full_pc
+  
         # Didn't like the plane results of segment cluster 
         # plus the plane logic removed some of the flat objects.
         # plane = self.segment_cluster(pc)
@@ -296,186 +318,192 @@ class Executor:
             haul(self.pc)
             rospy.sleep(1)
 
-    def evaluate_grasp(self, grasp, iterator = 0, manual=False):
-        eval_grasp_action = {}
-        eval_grasp_action['EVA_POSE'] = None
-        eval_grasp_action['EVA_Z'] = None
-        eval_grasp_action['EVA_SUCCESS'], eval_grasp_action['EVA_CLOSURE'] = self.widowx.eval_grasp(manual=manual)
-        if eval_grasp_action['EVA_SUCCESS']:
-          print("successful grasp: ",  eval_grasp_action['EVA_CLOSURE'])
-          eval_grasp_action['EVA_ACTION'] = "RANDOM_DROP"
-        elif iterator < 5:
-          eval_grasp_action['EVA_ACTION'] = "TRY_AGAIN"
-          print("unsuccessful grasp: ", eval_grasp_action['EVA_CLOSURE'])
-        else:
-          eval_grasp_action['EVA_ACTION'] = "NO_DROP"
-          print("unsuccessful grasp2: ", eval_grasp_action['EVA_CLOSURE'])
-        # compare keypoints for planned object
-        # see if attempted grab of object moved associated keypoints or cluster
-        # full credit if grabbed/lifted
-        # partial credit if moved
-        # no credit / retry with different grasp for same object if untouched
-
-        # if not moved, provide attempted grab, current pose, 3d picture to
-        # reinforcement learning NN. Bound move.
-        return eval_grasp_action
-
-    def evaluate_world(self, manual=False):
-        success, closure = self.widowx.eval_grasp(manual=manual)
-        # T, distances, i = icp(A, B)   # nxM matrices
-        return success
-
-    def find_cluster_centers(self, pc, labels):
-        cluster_centers = []
-        for cluster in set(labels):
-          if cluster != -1:
-            running_sum = np.array([0.0, 0.0, 0.0])
-            counter = 0
-
-            # for i in len(pc):
-            for i in range(pc.shape[0]):
-                if labels[i] == cluster:
-                    running_sum += pc[i]
-                    counter += 1
-
-            center = running_sum / counter
-            center[2] -= Z_OFFSET
-
-            # filter below floor or too high 
-            if center[2] > Z_MIN:
-                center[2] = Z_MIN
-                cluster_centers.append(center)
-            # elif center[2] < PRELIFT_HEIGHT:
-            elif center[2] < Z_MIN - .02:
-                for i, label in enumerate(labels):
-                    if label == cluster:
-                        labels[i] = -1
-                continue
-            else:
-                cluster_centers.append(center)
-        return cluster_centers
-
-
-    def execute_grasp(self, grasp, manual_label=False):
+    def execute_grasp(self, grasp, policy = None, manual_label=False):
         try:
-            def post_move_sample(prefix):
-              self.sample[prefix+'_img'] = self.get_rgbd()
-              self.sample[prefix+'_pc'] = self.get_pc()
-              self.sample[prefix+'_pose'] = self.get_pose()
-              self.sample[prefix+'_joints'] = self.widowx.get_joint_values()
               
-            x, y, z, theta = grasp
-            print('Attempting grasp: (%.4f, %.4f, %.4f, %.4f)'
-                  % (x, y, z, theta))
-            self.sample['attempted_grasp'] = grasp
-            post_move_sample('before')
-
-            assert inside_polygon(
-                (x, y, z), END_EFFECTOR_BOUNDS), 'Grasp not in bounds'
-            assert self.widowx.orient_to_pregrasp(
-                x, y), 'Failed to orient to target'
-            post_move_sample('orient')
-
-            prelift_z = min(PRELIFT_HEIGHT, (z - GRIPPER_OFFSET - .02))
-            print("move to pre-grasp", prelift_z)
-            assert self.widowx.move_to_grasp(x, y, prelift_z, theta), \
-                'Failed to reach pre-lift pose'
-            post_move_sample('prelift', )
-
-            if len(self.base_z) != 0:
-              sect = get_sector(x,y)
-              z = min(z, self.base_z[sect])
-            z -= GRIPPER_OFFSET
-            print("move to grasp", z)
-            assert self.widowx.move_to_grasp(
-                x, y, z, theta), 'Failed to execute grasp'
-            post_move_sample('grasp')
-
-            # print("move to vertical", z)
-            # # ARD: retry pose to correct wrong z for some orientations
-            # reached = self.widowx.move_to_vertical(z)
-
-            print("close gripper")
-            self.widowx.close_gripper()
-            post_move_sample('post-grasp')
-            # rospy.sleep(2)
-            reached = self.widowx.move_to_vertical(prelift_z)
-            post_move_sample('postlift')
-            eval_grasp_action = self.evaluate_grasp(grasp)
+            # set values for initial grasp
+            action = "GRASP"
+            new_x, new_y, new_z, new_theta = grasp
+            grasp_hist = [grasp]
+            cur_pose =  self.get_pose()
+            [cur_x, cur_y, cur_z] = [cur_pose[0], cur_pose[1], cur_pose[2]]
             e_i = 1
-            while eval_grasp_action['EVA_ACTION'] == "TRY_AGAIN":
-              new_pose = eval_grasp_action['EVA_POSE']
-              new_z = eval_grasp_action['EVA_Z']
-              plan = self.arm_plan(new_pose)
-              self.commander.execute(plan, wait=True)
-              reached = self.widowx.move_to_vertical(new_z)
-              self.widowx.close_gripper()
-              post_move_sample('post_grasp'+e_i)
-              if (action == "ROTATE"):                     # rotate 20 degrees
-                print("rotate")
-                self.widowx.wrist_rotate(DEG20_IN_RADIANS)
-                self.widowx.open_gripper()
-                post_move_sample('rotate'+e_i)
+            while action in ["GRASP","RETRY_GRASP", "EVAL_WORLD_ACTION", "ROTATE", "PUSH", FLIP]):
+              prelift_z = min(PRELIFT_HEIGHT, (new_z - GRIPPER_OFFSET - .02))
+              if len(self.base_z) != 0:
+                sect = get_sector(new_x,new_y)
+                lift_z = min(new_z, self.base_z[sect]) - GRIPPER_OFFSET
 
-              print("move to vertical")
-	      post_move_sample('postlift'+e_i)
-              reached = self.widowx.move_to_vertical(prelift_z)
-              eval_grasp_action = evaluate_grasp(grasp, e_i)
+              if (action == "GRASP"):                     
+                # Start from neutral; May choose different grasp/cluster
+                print('Attempting grasp: (%.4f, %.4f, %.4f, %.4f)'
+                      % (new_x, new_y, new_z, new_theta))
+                assert inside_polygon( (new_x, new_y, new_z), 
+                    END_EFFECTOR_BOUNDS), 'Grasp not in bounds'
+                assert self.widowx.orient_to_pregrasp(
+                    new_x, new_y), 'Failed to orient to target'
+                self.record_action(action,"orient_to_pregrasp",
+                    [["GOAL_X", new_x][GOAL_Y", new_y]])
+    
+                assert self.widowx.move_to_grasp(new_x, new_y, prelift_z, new_theta), \
+                    'Failed to reach pre-lift pose'
+                self.record_action(action,"move_to_grasp",
+                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]])
+    
+                assert self.widowx.move_to_grasp(
+                    new_x, new_y, new_z, theta), 'Failed to execute grasp'
+                self.record_action(action,"move_to_grasp",
+                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]],True)
+                self.widowx.close_gripper()
+                self.record_action(action,"close_gripper")
+
+              elif (action == "RETRY_GRASP"):                     
+                # do not go all the way to neutral; facilitate digital servoing
+                reached = self.widowx.move_to_vertical(prelift_z)
+                self.record_action(action,"move_to_vertical",[["GOAL_Z", prelift_z]])
+                assert self.widowx.move_to_grasp(new_x, new_y, 
+                     prelift_z, new_theta), \
+                    'Failed to reach pre-lift pose'
+                self.record_action(action,"move_to_grasp",
+                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]])
+                self.commander.execute(plan, wait=True)
+                reached = self.widowx.move_to_vertical(new_z)
+                self.record_action(action, "move_to_vertical", [[GOAL_Z", new_z]])
+                self.widowx.close_gripper()
+                self.record_action(action, "close_gripper")
+                eval_grasp_action = policy.evaluate_grasp(grasp, e_i)
+
+              elif (action == "EVAL_WORLD_ACTION"):                     
+                # Go to neutral pose to better determine amount of change 
+                # & next action
+                self.widowx.move_to_neutral()
+                self.record_action(action,"move_to_neutral")
+                eval_world_action = policy.evaluate_world()
+                # GRASP OR DROP ONLY OPTION
+
+              elif (action == "ROTATE"):                     # rotate 20 degrees
+                self.widowx.wrist_rotate(DEG20_IN_RADIANS)
+                self.record_action("ROTATE","wrist_rotate",
+                      [["RADS", DEG20_IN_RADIANS]]])
+                self.widowx.open_gripper()
+                self.record_action("ROTATE","open_gripper")
+
+              elif (action == "PUSH"):
+                # ARD: TODO
+	  	# Sine: sin(θ) = Opposite / Hypotenuse
+	  	# Cosine: cos(θ) = Adjacent / Hypotenuse
+	  	# Tangent: tan(θ) = Opposite / Adjacent
+                self.widowx.move_to_grasp( new_x, new_y, new_z, new_theta)
+                self.record_action("PUSH","move_to_grasp",
+                      [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]])
+                reached = self.widowx.move_to_vertical(new_z)
+                self.record_action("PUSH","move_to_vertical", [[GOAL_Z", new_z]])
+                self.widowx.close_gripper()
+                self.record_action("PUSH", "close_gripper")
+              elif (action == "FLIP"):         
+                assert self.widowx.orient_to_pregrasp(
+                  new_x, new_y), 'Failed to orient to target'
+                self.record_action("FLIP","orient_to_pregrasp",
+                      [["GOAL_X", new_x]["GOAL_Y", new_y]])
+                assert self.widowx.move_to_grasp(new_x, new_y, 
+                     prelift_z, new_theta), \
+                    'Failed to reach pre-lift pose'
+                self.record_action("FLIP","move_to_grasp",
+                      [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]])
+                  reached = self.widowx.move_to_vertical(new_z)
+                  self.record_action(action,"move_to_vertical", [[GOAL_Z", new_z]])
+                # Flips 90 degrees and drops
+                assert self.widowx.flip_and_drop(), 'Failed to flip and drop'
+                print("FLIP","flip_and_drop")
+                assert self.widowx.move_to_grasp(
+                    new_x, new_y, new_z, new_theta), 'Failed to execute grasp'
+                self.record_action("FLIP","move_to_grasp",
+                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]], True)
+                self.widowx.open_gripper()
+                self.record_action("FLIP","open_gripper",do_print=True)
+
               e_i += 1
+              eval_grasp_action = self.evaluate_grasp(grasp, e_i)
+              action = eval_grasp_action['EVA_ACTION']
+              new_x, new_y, new_z, new_theta = eval_grasp_action['EVA_NEW_POSE']
+              cur_x, cur_y, cur_z, cur_theta = eval_grasp_action['EVA_POSE']
+              # end grasping loop
+
+            self.widowx.move_to_neutral()
+            post_move_sample('after')
+            eval_world_action = self.evaluate_world()
 
             # GRAB COMPLETE; DO DROP IF SUCCESSFUL
-            if (eval_grasp_action['EVA_ACTION'] in ["RANDOM_DROP","NO_DROP","FLIP_DROP"]):
-              self.widowx.move_to_neutral()
-              post_move_sample('after')
-              success = self.evaluate_world()
-
+            action = eval_world_action['EVA_ACTION']
+            if action in ["NO_DROP","RANDOM_DROP","AIMED_DROP","ISOLATED_DROP"]:
               def pos_neg():
                 if random() >=.5:
                   return -1
                 return 1
-              action = "RANDOM_DROP"
               if (action == "NO_DROP"):    
                 pass
-              elif (action == "RANDOM_DROP"):
-                x = random() * self.drop_eeb[0] * pos_neg()
-                y = random() * self.drop_eeb[1] * pos_neg()
-                # z = PRELIFT_HEIGHT
-                print("Orient to drop: ", x, y, prelift_z)
-                assert self.widowx.orient_to_pregrasp(
-                    x, y), 'Failed to orient to target'
-                print("Random drop: ", x, y, z)
-                if len(self.base_z) != 0:
-                  sect = get_sector(x,y)
-                  z = min(z, self.base_z[sect])
-                z -= GRIPPER_OFFSET
-                assert self.widowx.move_to_grasp(
-                  x, y, z, theta), 'Failed to random drop'
-                reached = self.widowx.move_to_vertical(z)
               elif (action == "FLIP_DROP"):         # rotate 20 degrees
                 assert self.widowx.orient_to_pregrasp(
-                    x, y), 'Failed to orient to target'
-                print("move to pre-grasp")
+                  x, y), 'Failed to orient to target'
+                  self.record_action("FLIP_DROP","orient_to_pregrasp",
+                      [["GOAL_X", new_x]["GOAL_Y", new_y]])
                 prelift_z = min(PRELIFT_HEIGHT, (z - GRIPPER_OFFSET - .02))
                 assert self.widowx.move_to_grasp(x, y, prelift_z, theta), \
                     'Failed to reach pre-lift pose'
-                # Flips 90 degrees and drops 
+                self.record_action("FLIP_DROP","move_to_grasp",
+                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]])
+                # Flips 90 degrees and drops
                 assert self.widowx.flip_and_drop(), 'Failed to flip and drop'
-                print("move to grasp")
+                self.record_action("FLIP_DROP","flip_and_drop")
                 assert self.widowx.move_to_grasp(
                     x, y, z, theta), 'Failed to execute grasp'
-              if (action != "NO_DROP"):    
-                print("open gripper")
+                self.record_action("FLIP_DROP","move_to_grasp",
+                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]], True)
                 self.widowx.open_gripper()
+                self.record_action(action, "open_gripper")
+              else:
+                if (action == "RANDOM_DROP"):
+                  x = random() * self.drop_eeb[0] * pos_neg()
+                  y = random() * self.drop_eeb[1] * pos_neg()
+                elif (action == "AIMED_DROP"):
+                  x,y,_ = interesting_cluster()
+                elif (action == "ISOLATED_DROP" 
+                  x,y,z = unoccupated_space()
+                if action == "ISOLATED_DROP":
+                  # drop near bottom
+                  if len(self.base_z) != 0:
+                    sect = get_sector(x,y)
+                    z = min(z, self.base_z[sect])
+                  z -= GRIPPER_OFFSET
+
+                assert self.widowx.move_to_grasp(
+                    x, y, z, theta), 'Failed to drop'
+                self.record_action(action,"move_to_grasp",
+                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]], True)
+                reached = self.widowx.move_to_vertical(z)
+                self.record_action(action,"move_to_vertical",[["GOAL_Z",z]])
+                self.widowx.open_gripper()
+                self.record_action(action,"open_gripper",True)
                 rospy.sleep(2)
-                success = self.evaluate_world()
-              # policy.evaluate_grasp(self.b4pc, self.b4pc_rgb, self.afterpc, self.afterpc_rgb, grasp
-              # success = self.evaluate_grasp3(self.b4pc, self.afterpc)
+            elif eval_grasp_action['EVA_ACTION'] == "SWEEP_ARENA":
+              # Too many failures and objects all along the side or corners
+              # ARD TODO: improve sweep
+              executor.widowx.sweep_arena()
+              self.record_action("SWEEP_ARENA","sweep_arena")
+              executor.widowx.move_to_neutral()
+              self.record_action("SWEEP_ARENA","move_to_neutral")
+              executor.widowx.open_gripper()
+              self.record_action("SWEEP_ARENA","open_gripper")
             else:                                  # original code
               self.widowx.move_to_drop(), 'Failed to move to drop'
+              self.record_action("MOVE_TO_DROP","move_to_drop")
               # rospy.sleep(2)
               success = self.evaluate_grasp(manual=manual_label)
               self.sample['gripper_closure'] = self.widowx.eval_grasp()[1]
 
+            self.widowx.move_to_neutral()
+            self.record_action("END_GRASP","move_to_neutral")
+            success = self.evaluate_world()
             return success, 0
 
         except Exception as e:
@@ -511,8 +539,8 @@ class Executor:
                 print("Chosen grasp: ", chosen_grasp[0], chosen_grasp[1], chosen_grasp[2])
             p2 = [g[0],g[1],g[2],rgba]
             pc2.append(p2)
-        if FAVOR_KEYPOINT:
-          pc2 = KP.add_to_pc(pc2)
+        # if FAVOR_KEYPOINT:
+        #   pc2 = KP.add_to_pc(pc2)
         pc2 = np.reshape(pc2, (len(pc2), 4))
         fields = [PointField('x', 0, PointField.FLOAT32, 1),
                   PointField('y', 4, PointField.FLOAT32, 1),
@@ -522,7 +550,7 @@ class Executor:
         pc2 = point_cloud2.create_cloud(self.pc_header, fields, pc2)
         self.pc_grasps_pub3.publish(pc2)
 
-    def publish_pc(self, grasps = None, chosen_grasp = None):
+    def publish_pc(self):
       # Derived from:
       # https://gist.github.com/lucasw/ea04dcd65bc944daea07612314d114bb
       for j in range(2):
@@ -542,8 +570,8 @@ class Executor:
         for i, p in enumerate(pc):
           p2 = [p[0],p[1],p[2],pc_rgb[i]]
           pc2.append(p2)
-        if FAVOR_KEYPOINT:
-          pc2 = KP.add_to_pc(pc2)
+        # if FAVOR_KEYPOINT:
+        #   pc2 = KP.add_to_pc(pc2)
         pc2 = np.reshape(pc2, (len(pc2), 4))
         # print("pc2 len: ", len(pc2))
         # print("pc2_rgb len: ", len(pc2_rgb))
@@ -559,27 +587,24 @@ class Executor:
         else:
           self.pc_depth_map_pub2.publish(pc2)
 
-    def save_sample(self, i=0):
-        self.sample['timestamp'] = time.ctime()
+    def record_action(self, action_name, subaction_name, action_data=None, do_print=False):
+      # For NN training, we will use the fixed sized self.rgbd instead of 
+      # using self.full_pc():
+      #     ["PC",self.get_pc()],
+      #     ["RGBD", self.get_rgbd()], # ARD: Not needed for most actions
+      self.history.new_action( [["ACTION",action_name, subaction_name], 
+         ["RGBD", self.get_rgbd()], 
+         ["POSE", self.get_pose()],["JOINTS",self.widowx.get_joint_values()]])
+      if action_data != None:
+        self.history.action_info(action_data)
+      if do_print != None and do_print:
+        print(action_name,subaction_name)
 
-        self.sample['D'] = self.camera_info.D
-        self.sample['K'] = self.camera_info.K
-        self.sample['R'] = self.camera_info.R
-        self.sample['P'] = self.camera_info.P
+    def record_grasp(self, grasp, grasps):
+      self.history.new_event()
+      self.history.new_action("EXECUTE_GRASP","execute_grasp")
+      self.history.action_info(["CHOSEN_GRASP",grasp[0],grasp[1],grasp[2],grasp[3]])
+      for i, (grasp, confidence) in enumerate(grasps):
+        # i, x, y, z, theta, confidence
+        self.history.action_info(["GRASP", i, grasp[0],grasp[1],grasp[2],grasp[3],confidence])
 
-        graspPoint = np.array([self.sample['pose'][0], self.sample['pose'][1],
-                               self.sample['pose'][2]])
-
-        predicted = self.calculate_crop(graspPoint)
-
-        self.sample['pixel_point'] = predicted
-
-        before = self.sample['before_img'][:, :, :3].astype(np.uint8)
-
-        with h5py.File(self.datapath + '/' + str(i) + '.hdf5', 'w') as file:
-            for key in self.sample:
-                file[key] = self.sample[key]
-
-        self.sample = {}
-
-        print('Saved to %s' % self.datapath  + '/'+ str(i) + '.hdf5')

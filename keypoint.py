@@ -24,7 +24,11 @@ class Keypoints:
       self.pc_header = None
       orb = cv.ORB_create()         # Initiate SIFT detector
       # find the keypoints and descriptors with SIFT
-      cropped_img = self.crop_img(img)
+      if RGB_DEPTH_FROM_PC:
+        # already cropped and trasnformed
+        cropped_img = img  
+      else:
+        cropped_img = self.crop_img(img)
       self.keypoints, self.descriptor = orb.detectAndCompute(cropped_img,None)
 
       self.bridge = CvBridge()
@@ -33,22 +37,22 @@ class Keypoints:
       top_margin = KP_IMG_MARGIN_DIM[0]
       bottom_margin = KP_IMG_MARGIN_DIM[1]
 
-      # for i in range(len(self.keypoints)):
-      for kp in self.keypoints:
-        x,y = kp.pt
-        # print("pt:",pt)
-        kp_left_margin = top_margin[0] + (top_margin[0] - bottom_margin[1]) * (y / (top[1] - top[0]))
-        kp_right_margin = top_margin[1] + (top_margin[1] - bottom_margin[0]) * (y / (top[1] - top[0]))
-        # filter keypoints out of margins
-        if x < kp_left_margin or x > kp_right_margin or y < top[0]:
-          self.keypoints.remove(kp)
+      if !RGB_DEPTH_FROM_PC:
+        # transform camera to 3d mapping
+        for kp in self.keypoints:
+          x,y = kp.pt
+          # print("pt:",pt)
+          kp_left_margin = top_margin[0] + (top_margin[0] - bottom_margin[1]) * (y / (top[1] - top[0]))
+          kp_right_margin = top_margin[1] + (top_margin[1] - bottom_margin[0]) * (y / (top[1] - top[0]))
+          # filter keypoints out of margins
+          if x < kp_left_margin or x > kp_right_margin or y < top[0]:
+            self.keypoints.remove(kp)
       # print("num keypoints: ",len(self.keypoints))
       if DISPLAY_PC_KEYPOINT:
           self.header = None
           self.pc_kp_pub = rospy.Publisher(PC_KP_TOPIC, PointCloud2, queue_size=1)
           self.pc_subscriber = rospy.Subscriber(
                                  POINTCLOUD_TOPIC, PointCloud2, self.update_pc)
-
 
 
     def get_kp(self):
@@ -92,41 +96,33 @@ class Keypoints:
       return imgmsg
 
     def compare_kp(KP2):
-      import numpy as np
-      from matplotlib import pyplot as plt
-
+      # from matplotlib import pyplot as plt
 
       # find the keypoints and descriptors with SIFT
       # kp1, des1 = orb.detectAndCompute(img1,None)
       # kp2, des2 = orb.detectAndCompute(img2,None)
       # create BFMatcher object
       bf = cv.BFMatcher(cv.NORM_HAMMING, crossCheck=True)
-      
       # Match descriptors.
-      matches = bf.match(des1,des2)
+      bf_matches = bf.match(des1,des2)
       
       # Sort them in the order of their distance.
-      matches = sorted(matches, key = lambda x:x.distance)
-      
+      # matches = sorted(bf_matches, key = lambda x:x.distance)
       # Draw first 10 matches.
-      img3 = cv.drawMatches(img1,kp1,img2,kp2,matches[:10], flags=2)
-      
-      plt.imshow(img3),plt.show()
+      # img3 = cv.drawMatches(img1,kp1,img2,kp2,matches[:10], flags=2)
+      # plt.imshow(img3),plt.show()
       ####
       # BFMatcher with default params
-      bf = cv.BFMatcher()
-      matches = bf.knnMatch(des1,des2, k=2)
-      
+      # bf = cv.BFMatcher()
+      # bf_matches = bf.knnMatch(des1,des2, k=2)
       # Apply ratio test
-      good = []
-      for m,n in matches:
-          if m.distance < 0.75*n.distance:
-              good.append([m])
-      
+      # good = []
+      # for m,n in matches:
+      #     if m.distance < 0.75*n.distance:
+      #         good.append([m])
       # cv.drawMatchesKnn expects list of lists as matches.
-      img3 = cv.drawMatchesKnn(img1,kp1,img2,kp2,good,flags=2)
-      
-      plt.imshow(img3),plt.show()
+      # img3 = cv.drawMatchesKnn(img1,kp1,img2,kp2,good,flags=2)
+      # plt.imshow(img3),plt.show()
       ####
       # FLANN parameters
       FLANN_INDEX_KDTREE = 0
@@ -134,22 +130,19 @@ class Keypoints:
       search_params = dict(checks=50)   # or pass empty dictionary
       
       flann = cv.FlannBasedMatcher(index_params,search_params)
-      
-      matches = flann.knnMatch(des1,des2,k=2)
+      flann_matches = flann.knnMatch(des1,des2,k=2)
       
       # Need to draw only good matches, so create a mask
-      matchesMask = [[0,0] for i in xrange(len(matches))]
-      
+      # matchesMask = [[0,0] for i in xrange(len(matches))]
       # ratio test as per Lowe's paper
-      for i,(m,n) in enumerate(matches):
-          if m.distance < 0.7*n.distance:
-              matchesMask[i]=[1,0]
-      
-      draw_params = dict(matchColor = (0,255,0),
-                         singlePointColor = (255,0,0),
-                         matchesMask = matchesMask,
-                         flags = 0)
-      
-      img3 = cv.drawMatchesKnn(img1,kp1,img2,kp2,matches,None,**draw_params)
-      
-      plt.imshow(img3,),plt.show()
+      # for i,(m,n) in enumerate(matches):
+      #     if m.distance < 0.7*n.distance:
+      #         matchesMask[i]=[1,0]
+      # draw_params = dict(matchColor = (0,255,0),
+      #                    singlePointColor = (255,0,0),
+      #                    matchesMask = matchesMask,
+      #                    flags = 0)
+      # img3 = cv.drawMatchesKnn(img1,kp1,img2,kp2,matches,None,**draw_params)
+      # plt.imshow(img3,),plt.show()
+
+      return bf_matches, flann_matches 

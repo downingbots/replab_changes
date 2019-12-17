@@ -7,7 +7,17 @@ BASE_PC_BOUNDS = [(-.17,  .15),
 
 BASE_HEIGHT_BOUNDS = (.39, .49)
 
-PC_DENSITY = 25000
+# use rgb derived from transformed pc 
+# pickpush policy is based purely on this rgbd
+# rgb camera is: 480x640 (307200 pixels)
+# 68x60 imh produces  8160 ~.2 inches pixels)
+# 136 x 120 produces 16320 ~.1 inch pixels
+# 272 x 240 produces 65280 ~.05 inch pixels
+RGB_DEPTH_FROM_PC = True # False is original code
+RGB_WIDTH  = 136
+RGB_HEIGHT = 120
+RGB_PC_DENSITY = 65280       # 4 to 1 ratio before reduction
+PC_DENSITY = 5000            # further reduction
 
 DISPLAY_IMG_KEYPOINT = True
 DISPLAY_PC_RGB       = True
@@ -52,3 +62,4 @@ KP_IMG_MARGIN_DIM = [(119, 518), (40,590)]
 # map: (margins)(ratios)
 KP_IMG_PC_MAP = [(110, 90), (1.3, 1.03)]
 
+HISTORY_NUM_EVENTS = 5
