@@ -4,7 +4,6 @@ import numpy as np
 from matplotlib.patches import Circle
 import h5py
 import math
-import math
 
 import rospy
 from std_msgs.msg import String
@@ -61,7 +60,7 @@ class Executor:
         self.pc_count = 0
 
         # Register subscribers
-        if !RGB_DEPTH_FROM_PC:
+        if not RGB_DEPTH_FROM_PC:
           self.img_subscriber = rospy.Subscriber(
             RGB_IMAGE_TOPIC, Image, self.update_rgb)
           self.depth_subscriber = rospy.Subscriber(
@@ -97,19 +96,23 @@ class Executor:
         # Store latest RGB-D
 
         if RGB_DEPTH_FROM_PC:
-          self.rgb = np.zeros((PC_HEIGHT, PC_WIDTH, 3))
-          self.depth = np.zeros((PC_HEIGHT, PC_WIDTH, 1))
+          self.rgb = np.zeros((RGB_HEIGHT, RGB_WIDTH, 3))
+          self.depth = np.zeros((RGB_HEIGHT, RGB_WIDTH, 1))
+          self.pc_map = np.full((RGB_HEIGHT, RGB_WIDTH), -1)
         else:
           self.rgb = np.zeros((IMG_HEIGHT, IMG_WIDTH, 3))
           self.depth = np.zeros((IMG_HEIGHT, IMG_WIDTH, 1))
+          self.pc_map = none
         # ARD: orig:
         # self.pc = np.zeros((1, 3))
         self.pc = []                   # unmaterialized pc
+        self.pc_img = []                   
         self.full_pc = []
         self.full_pc_rgb = []
         self.transformed_pc = []
         self.transformed_pc_rgb = []   
         self.base_z = []
+        self.sample = {}
         self.pc_header = None
 
         self.camera_info = CameraInfo()
@@ -127,7 +130,7 @@ class Executor:
         self.camera = PinholeCameraModel()
         self.camera.fromCameraInfo(self.camera_info)
 
-    # rgb image topic
+    # rgb image topic if not RGB_DEPTH_FROM_PC
     def update_rgb(self, data):
         if not self.rgb_ready:
           print("skip update_rgb")
@@ -135,11 +138,12 @@ class Executor:
         cv_image = self.transform(self.bridge.imgmsg_to_cv2(data))
         self.rgb = cv_image
 
-    # depth image topic
+    # depth image topic if not RGB_DEPTH_FROM_PC
     def update_depth(self, data):
         cv_image = self.transform(self.bridge.imgmsg_to_cv2(data))
         self.depth = cv_image
 
+    # point cloud topic 
     def update_pc(self, data):
         if not self.pc_ready:
           # busy materializing from previous pointcloud.
@@ -149,6 +153,7 @@ class Executor:
         self.pc_header = data.header
         # print("pc_header: ", self.pc_header)
         self.pc = pc2.read_points(data, skip_nans=True)
+        # self.pc = list(pc2.read_points(data, skip_nans=False))
         self.pc_count = self.pc_count + 1
         if self.pc_count == 10:
           # self.pub_cluster()
@@ -158,9 +163,15 @@ class Executor:
         self.camera_info = data
 
     def get_rgbd(self):
+        self.get_pc()
         if RGB_DEPTH_FROM_PC:
-          depth = np.reshape(self.depth, (RGB_WIDTH, RGB_HEIGHT, 1))
-          return np.concatenate([self.rgb, depth], axis=2)
+          # depth = np.reshape(self.depth, (RGB_WIDTH, RGB_HEIGHT, 1))
+          # depth = np.reshape(self.depth, (RGB_HEIGHT, RGB_WIDTH, 1))
+          # print("   ", self.depth.shape, self.rgb.shape)
+          # print("   ", len(self.pc_img), len(self.pc_img[0]))
+          return self.pc_img
+          # self.full_pc_rgb = np.concatenate([self.rgb, depth], axis=2)
+          # return self.full_pc_rgb 
           # return self.rgbd
         else: # derived from original code
           # old_depth = self.depth.astype(np.float) / 10000.
@@ -170,7 +181,8 @@ class Executor:
           # print (old_depth.shape)    # (480, 640, 1)
           depth = rectify_depth(old_depth)
           depth = np.reshape(depth, (IMG_HEIGHT, IMG_WIDTH, 1))
-          return np.concatenate([self.rgb, depth], axis=2)
+          self.full_pc_rgb = np.concatenate([self.rgb, depth], axis=2)
+          return self.full_pc_rgb 
 
     def get_pose(self):
         pose = self.widowx.get_current_pose().pose
@@ -190,15 +202,28 @@ class Executor:
         # pc = list(self.pc)
         # if len(self.pc) == 0:
         #     return 
+        # self.pc_ready = False
+        # pc = list(self.pc)
+        # self.pc_ready = True
+
+        # pc = np.array(self.pc)[:, :3]
+        # materialize pc
         self.pc_ready = False
         pc = list(self.pc)
         self.pc_ready = True
-        pc = np.array(pc)[:, :3]
-
-        # pc = np.array(self.pc)[:, :3]
-        np.random.shuffle(pc)
-        if pc.shape[0] > PC_DENSITY:
-            pc = pc[:PC_DENSITY]
+        # print("len self.pc ", len(pc))
+        if len(pc) == 0:
+          print("No point cloud from camera!")
+          return None
+        rgb_pc = np.array(pc)[:, :4]
+        np.random.shuffle(rgb_pc)
+        # print("rgb_pc shape0 ", rgb_pc.shape[0])
+        print("rgb_pc shape ", rgb_pc.shape)
+        # if rgb_pc.shape[0] > RGB_PC_DENSITY:
+        if len(rgb_pc) > RGB_PC_DENSITY:
+          rgb_pc = rgb_pc[:RGB_PC_DENSITY]
+          print("len rgb_pc ", len(rgb_pc))
+        pc = np.array(rgb_pc)[:, :3]
 
         def transform_pc(srcpc, tf_matrix):
             ones = np.ones((srcpc.shape[0], 1))
@@ -208,29 +233,66 @@ class Executor:
 
         pc = transform_pc(pc, self.cm)
 
+        # print("b4 len pc ", len(pc))
+        rgb_pc = [[p[0],p[1],p[2],rgb_pc[i][3]] for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS)]
+        pc = [p for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS)]
+        # rgb_pc = [[p[0],p[1],p[2],rgb_pc[i][3]] for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS)]
+        # rgb_pc = [[p[0],p[1],p[2],rgb_pc[i][3]] for i, p in enumerate(pc)]
+        # pc = [p for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS)]
+        print("len pc ", len(pc))
+        if len(pc) > 0:
+          print("pc[0]: ",pc[0])
         if RGB_DEPTH_FROM_PC:
-          self.rgb, self.depth = self.rgb_from_pc(pc)
-
-        # do further reduction
-        if pc.shape[0] > RGB_PC_DENSITY:
-          pc = pc[:RGB_PC_DENSITY]
-        if RGB_DEPTH_FROM_PC:
+          # get 2d rgb image, with associated depth, and a mapping to full pc
+          self.rgb, self.depth, self.pc_map, self.pc_img = rgb_depth_map_from_pc(pc,rgb_pc)
           self.full_pc = pc
           self.sample['full_pc'] = self.full_pc
 
+        # ARD: TEST
+        # self.transformed_pc_rgb = self.pc_img
+        # self.publish_pc()
+        # print(jojo)
+        # ARD: END TEST
+        # do further PC size reduction for kdtree and grip analysis
+        # if pc.shape[0] > PC_DENSITY:
+        pc = np.array(self.pc_img)[:, :3]
+        if len(pc) > PC_DENSITY:
+            pc = pc[:PC_DENSITY]
+
         dist, _ = self.kdtree.query(pc, k=1)
-        pc = [p for i, p in enumerate(pc) if inside_polygon(
-            p, PC_BOUNDS, HEIGHT_BOUNDS) and dist[i] > .003]
+        pc = [p for i, p in enumerate(pc) if dist[i] > .003]
+        # PC_BOUNDS, HEIGH_BOUNDS now done in rgb_depth_map_from_pc()
+        # pc = [p for i, p in enumerate(pc) if inside_polygon(
+        #     p, PC_BOUNDS, HEIGHT_BOUNDS) and dist[i] > .003]
+
 
         return np.reshape(pc, (len(pc), 3))
 
-
+    # return img
     def get_rgb(self):
         return self.rgb
+        # return cv2.UMat(self.rgb)
+        # return cv2.cvtColor(self.rgb, RGB)
+        # import scipy.misc
+        # return scipy.misc.toimage(self.rgb)
+        # from PIL import Image
+        # return Image.fromarray(self.rgb, 'RGB')
 
+    # 2-d image of clusters (i.e., tray filtered out)
     def get_pc_rgb(self):
         if RGB_DEPTH_FROM_PC:
-          self.full_pc_rgb = self.full_pc[:, 3]
+          # self.full_pc_rgb = self.full_pc[:, 3]
+          # self.full_pc_rgb = list(self.pc)
+          # executor.get_rgbd() and get_pc() should have already been called:
+          # -> self.rgb, self.depth, self.pc_map, self.full_pc, self.full_pc_rgb
+          #    are filled already in
+          # print("pc[0] :",self.full_pc_rgb[0])
+          # self.full_pc_rgb = np.array(self.full_pc_rgb)[:, :4]
+          # print("fpc ",len(self.full_pc))
+          # print("fpc2",self.full_pc[0].shape)
+          # self.full_pc_rgb = np.array(self.full_pc)[:, :4]
+          print("pc_img ",len(self.pc_img))
+          pc = self.pc_img
         else:
           # ARD
           # while (not self.pc_ready):
@@ -252,7 +314,8 @@ class Executor:
           if self.full_pc.shape[0] > PC_DENSITY:
               self.full_pc = self.full_pc[:PC_DENSITY]
           self.full_pc = np.array(self.full_pc)[:, :4]
-          self.full_pc_rgb = self.full_pc[:, 3]
+          # self.full_pc_rgb = self.full_pc[:, 3]
+          self.full_pc_rgb = self.full_pc
           # print("pc_rgb: ", self.full_pc_rgb)
           self.full_pc = np.array(self.full_pc)[:, :3]
   
@@ -266,19 +329,21 @@ class Executor:
           self.full_pc = np.array(self.full_pc)[:, :3]
           self.sample['full_pc'] = self.full_pc
   
-        # Didn't like the plane results of segment cluster 
-        # plus the plane logic removed some of the flat objects.
-        # plane = self.segment_cluster(pc)
-        # pc3 = [p for i, p in enumerate(pc) if dist[i] > .003 and
-        #       (plane is not None and not plane[i])]
-        pc = []
-        if DISPLAY_PC_RGB:
-          pc_rgb = []
-        for i, p in enumerate(self.full_pc):
-           if inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS):
-             pc.append(p)
-             if DISPLAY_PC_RGB:
-               pc_rgb.append(p)
+          # Didn't like the plane results of segment cluster 
+          # plus the plane logic removed some of the flat objects.
+          # plane = self.segment_cluster(pc)
+          # pc3 = [p for i, p in enumerate(pc) if dist[i] > .003 and
+          #       (plane is not None and not plane[i])]
+          pc = []
+          if DISPLAY_PC_RGB:
+            pc_rgb = []
+            for i, p in enumerate(self.full_pc):
+              if inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS):
+                pc.append(p)
+                if DISPLAY_PC_RGB:
+                  pc_rgb.append(p)
+            print("len full_pc: ",len(self.full_pc), " vs. inbound ", len(pc_rgb))
+
         self.base_z = compute_z_sectors(pc)
         pc2 = []
         if DISPLAY_PC_RGB:
@@ -286,19 +351,23 @@ class Executor:
           for i, p in enumerate(pc):
              sect = get_sector(p[0],p[1])
              if (p[2] > self.base_z[sect] - MIN_OBJ_HEIGHT):
-               # print("TOO CLOSE TO GROUND")
+               # if i < 10:
+                 # print("TOO CLOSE TO GROUND ", p[2], self.base_z[sect], MIN_OBJ_HEIGHT)
                continue
              pc2.append(p)
-             pc2_rgb.append(pc_rgb[i])
-        pc = np.reshape(pc2, (len(pc2), 3))
+             # pc2_rgb.append(pc_rgb[i])
+             pc2_rgb.append(p)
+        # pc = np.reshape(pc2, (len(pc2), 3))
         if DISPLAY_PC_RGB:
-          self.transformed_pc_rgb = np.reshape(pc2_rgb, (len(pc2_rgb), 3))
-          self.transformed_pc = pc
+          # self.transformed_pc_rgb = np.reshape(pc2_rgb, (len(pc2_rgb), 3))
+          self.transformed_pc_rgb = np.reshape(pc2_rgb, (len(pc2_rgb), 4))
+          # self.transformed_pc = pc
         # print("pc: ", self.pc)
         # print("pc_rgb: ", self.pc_rgb)
         # print("len1 pc inbounds: ",len(self.pc), " pc[0]= ", self.pc[0])
         # return self.pc, self.pc_rgb
-        return self.transformed_pc, self.transformed_pc_rgb
+        # return self.transformed_pc, self.transformed_pc_rgb
+        return self.transformed_pc_rgb
 
     def scan_base(self, scans=100):
         def haul(pc):
@@ -318,21 +387,25 @@ class Executor:
             haul(self.pc)
             rospy.sleep(1)
 
-    def execute_grasp(self, grasp, policy = None, manual_label=False):
+    def execute_grasp(self, grasp, grasps = None, confidences = None, policy = None, manual_label=False):
         try:
-              
-            # set values for initial grasp
             action = "GRASP"
+            # set values for initial grasp
             new_x, new_y, new_z, new_theta = grasp
             grasp_hist = [grasp]
             cur_pose =  self.get_pose()
             [cur_x, cur_y, cur_z] = [cur_pose[0], cur_pose[1], cur_pose[2]]
             e_i = 1
-            while action in ["GRASP","RETRY_GRASP", "EVAL_WORLD_ACTION", "ROTATE", "PUSH", FLIP]):
+            while action in ["GRASP","RETRY_GRASP", "PICKUP","EVAL_WORLD_ACTION", "ROTATE", "FLIP"]:
               prelift_z = min(PRELIFT_HEIGHT, (new_z - GRIPPER_OFFSET - .02))
               if len(self.base_z) != 0:
                 sect = get_sector(new_x,new_y)
                 lift_z = min(new_z, self.base_z[sect]) - GRIPPER_OFFSET
+                #    ('lift z', 0.43801, 0.47103, 0.4812742508453974, 0.03302)
+
+                print("lift z", lift_z,new_z, self.base_z[sect],GRIPPER_OFFSET)
+              else:
+                print("WARNING: base_z = 0")
 
               if (action == "GRASP"):                     
                 # Start from neutral; May choose different grasp/cluster
@@ -343,19 +416,20 @@ class Executor:
                 assert self.widowx.orient_to_pregrasp(
                     new_x, new_y), 'Failed to orient to target'
                 self.record_action(action,"orient_to_pregrasp",
-                    [["GOAL_X", new_x][GOAL_Y", new_y]])
+                    [["GOAL_X", new_x],["GOAL_Y", new_y]])
     
                 assert self.widowx.move_to_grasp(new_x, new_y, prelift_z, new_theta), \
                     'Failed to reach pre-lift pose'
                 self.record_action(action,"move_to_grasp",
-                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]])
+                    [["GOAL_X", new_x],["GOAL_Y", new_y],["GOAL_Z", prelift_z],["GOAL_THETA", new_theta]])
     
                 assert self.widowx.move_to_grasp(
-                    new_x, new_y, new_z, theta), 'Failed to execute grasp'
+                    new_x, new_y, lift_z, new_theta), 'Failed to execute grasp'
                 self.record_action(action,"move_to_grasp",
-                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]],True)
+                    [["GOAL_X", new_x],["GOAL_Y", new_y],["GOAL_Z", prelift_z],["GOAL_THETA", new_theta]],True)
                 self.widowx.close_gripper()
                 self.record_action(action,"close_gripper")
+
 
               elif (action == "RETRY_GRASP"):                     
                 # do not go all the way to neutral; facilitate digital servoing
@@ -368,10 +442,20 @@ class Executor:
                     [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]])
                 self.commander.execute(plan, wait=True)
                 reached = self.widowx.move_to_vertical(new_z)
-                self.record_action(action, "move_to_vertical", [[GOAL_Z", new_z]])
+                self.record_action(action, "move_to_vertical", [["GOAL_Z", new_z]])
                 self.widowx.close_gripper()
                 self.record_action(action, "close_gripper")
-                eval_grasp_action = policy.evaluate_grasp(grasp, e_i)
+                pose = self.get_pose()
+                joints = self.widowx.get_joint_values()
+                print("joints:",joints)
+                eval_grasp_action = policy.evaluate_grasp(grasp, grasps, pose, joints)
+
+              elif (action == "PICKUP"):                     
+                assert self.widowx.move_to_grasp(new_x, new_y, 
+                     prelift_z, new_theta), \
+                    'Failed to reach pre-lift pose'
+                self.record_action(action,"move_to_grasp",
+                    [["GOAL_X", new_x],["GOAL_Y", new_y],["GOAL_Z", prelift_z],["GOAL_THETA", new_theta]])
 
               elif (action == "EVAL_WORLD_ACTION"):                     
                 # Go to neutral pose to better determine amount of change 
@@ -379,27 +463,16 @@ class Executor:
                 self.widowx.move_to_neutral()
                 self.record_action(action,"move_to_neutral")
                 eval_world_action = policy.evaluate_world()
+
                 # GRASP OR DROP ONLY OPTION
 
               elif (action == "ROTATE"):                     # rotate 20 degrees
                 self.widowx.wrist_rotate(DEG20_IN_RADIANS)
                 self.record_action("ROTATE","wrist_rotate",
-                      [["RADS", DEG20_IN_RADIANS]]])
+                      [["RADS", DEG20_IN_RADIANS]])
                 self.widowx.open_gripper()
                 self.record_action("ROTATE","open_gripper")
 
-              elif (action == "PUSH"):
-                # ARD: TODO
-	  	# Sine: sin(θ) = Opposite / Hypotenuse
-	  	# Cosine: cos(θ) = Adjacent / Hypotenuse
-	  	# Tangent: tan(θ) = Opposite / Adjacent
-                self.widowx.move_to_grasp( new_x, new_y, new_z, new_theta)
-                self.record_action("PUSH","move_to_grasp",
-                      [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]])
-                reached = self.widowx.move_to_vertical(new_z)
-                self.record_action("PUSH","move_to_vertical", [[GOAL_Z", new_z]])
-                self.widowx.close_gripper()
-                self.record_action("PUSH", "close_gripper")
               elif (action == "FLIP"):         
                 assert self.widowx.orient_to_pregrasp(
                   new_x, new_y), 'Failed to orient to target'
@@ -410,42 +483,73 @@ class Executor:
                     'Failed to reach pre-lift pose'
                 self.record_action("FLIP","move_to_grasp",
                       [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]])
-                  reached = self.widowx.move_to_vertical(new_z)
-                  self.record_action(action,"move_to_vertical", [[GOAL_Z", new_z]])
+                reached = self.widowx.move_to_vertical(new_z)
+                self.record_action(action,"move_to_vertical", [["GOAL_Z", new_z]])
                 # Flips 90 degrees and drops
                 assert self.widowx.flip_and_drop(), 'Failed to flip and drop'
                 print("FLIP","flip_and_drop")
                 assert self.widowx.move_to_grasp(
-                    new_x, new_y, new_z, new_theta), 'Failed to execute grasp'
+                    new_x, new_y, lift_z, new_theta), 'Failed to execute grasp'
                 self.record_action("FLIP","move_to_grasp",
-                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]], True)
+                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", lift_z]["GOAL_THETA", new_theta]], True)
                 self.widowx.open_gripper()
                 self.record_action("FLIP","open_gripper",do_print=True)
 
               e_i += 1
-              eval_grasp_action = self.evaluate_grasp(grasp, e_i)
+              pose = self.get_pose()
+              joints = self.widowx.get_joint_values()
+              print("joints:",joints)
+              eval_grasp_action = policy.evaluate_grasp(grasp, grasps, pose, joints, e_i)
               action = eval_grasp_action['EVA_ACTION']
               new_x, new_y, new_z, new_theta = eval_grasp_action['EVA_NEW_POSE']
               cur_x, cur_y, cur_z, cur_theta = eval_grasp_action['EVA_POSE']
               # end grasping loop
 
-            self.widowx.move_to_neutral()
-            post_move_sample('after')
-            eval_world_action = self.evaluate_world()
+            # self.widowx.move_to_neutral()
+            # ARD: todo: post_move_sample
+            # post_move_sample('after')
+            eval_world_action = policy.evaluate_world()
 
             # GRAB COMPLETE; DO DROP IF SUCCESSFUL
             action = eval_world_action['EVA_ACTION']
-            if action in ["NO_DROP","RANDOM_DROP","AIMED_DROP","ISOLATED_DROP"]:
+            action = "RANDOM_DROP"
+            if action in ["NO_DROP","PUSH","RANDOM_DROP","AIMED_DROP","ISOLATED_DROP"]:
               def pos_neg():
                 if random() >=.5:
                   return -1
                 return 1
               if (action == "NO_DROP"):    
                 pass
+              elif (action == "PUSH"):    
+                # ARD: TODO
+                # Sine: sin(theta) = Opposite / Hypotenuse
+                # Cosine: cos(theta) = Adjacent / Hypotenuse
+                # Tangent: tan(theta) = Opposite / Adjacent
+                joints = self.widowx.get_joint_values()
+                cur_angle = joints[0]
+                delta = np.pi / 8
+                if cur_angle + delta > np.pi:
+                  new_angle = cur_angle - delta
+                elif cur_angle - delta < -np.pi:
+                  new_angle = cur_angle + delta
+                elif random() >=.5:
+                  new_angle = cur_angle - delta
+                else:
+                  new_angle = cur_angle + delta
+
+                assert self.widowx.orient_to_pregrasp(angle = new_angle), 'Failed to orient to target'
+                self.record_action("PUSH", "open_gripper")
+
+                reached = self.widowx.move_to_vertical(new_z)
+                self.record_action("PUSH","move_to_vertical", [["GOAL_Z", new_z]])
+                self.widowx.move_to_neutral()
+                # ARD: todo: post_move_sample
+                # post_move_sample('after')
+                # eval_world_action = policy.evaluate_world()
               elif (action == "FLIP_DROP"):         # rotate 20 degrees
                 assert self.widowx.orient_to_pregrasp(
                   x, y), 'Failed to orient to target'
-                  self.record_action("FLIP_DROP","orient_to_pregrasp",
+                self.record_action("FLIP_DROP","orient_to_pregrasp",
                       [["GOAL_X", new_x]["GOAL_Y", new_y]])
                 prelift_z = min(PRELIFT_HEIGHT, (z - GRIPPER_OFFSET - .02))
                 assert self.widowx.move_to_grasp(x, y, prelift_z, theta), \
@@ -467,8 +571,11 @@ class Executor:
                   y = random() * self.drop_eeb[1] * pos_neg()
                 elif (action == "AIMED_DROP"):
                   x,y,_ = interesting_cluster()
-                elif (action == "ISOLATED_DROP" 
+                elif action == "ISOLATED_DROP":
                   x,y,z = unoccupated_space()
+                elif action == "PLAYGROUND_DROP":
+                  x,y,z = unoccupated_playground_space()
+          
                 if action == "ISOLATED_DROP":
                   # drop near bottom
                   if len(self.base_z) != 0:
@@ -476,6 +583,10 @@ class Executor:
                     z = min(z, self.base_z[sect])
                   z -= GRIPPER_OFFSET
 
+                assert self.widowx.move_to_grasp(x, y, prelift_z, new_theta), \
+                    'Failed to reach pre-lift pose'
+                self.record_action(action,"move_to_grasp",
+                    [["GOAL_X", new_x],["GOAL_Y", new_y],["GOAL_Z", prelift_z],["GOAL_THETA", new_theta]])
                 assert self.widowx.move_to_grasp(
                     x, y, z, theta), 'Failed to drop'
                 self.record_action(action,"move_to_grasp",
@@ -498,12 +609,12 @@ class Executor:
               self.widowx.move_to_drop(), 'Failed to move to drop'
               self.record_action("MOVE_TO_DROP","move_to_drop")
               # rospy.sleep(2)
-              success = self.evaluate_grasp(manual=manual_label)
+              success = policy.evaluate_grasp(manual=manual_label)
               self.sample['gripper_closure'] = self.widowx.eval_grasp()[1]
 
             self.widowx.move_to_neutral()
             self.record_action("END_GRASP","move_to_neutral")
-            success = self.evaluate_world()
+            success = policy.evaluate_world()
             return success, 0
 
         except Exception as e:
@@ -528,7 +639,9 @@ class Executor:
             deg = g[3]
             if deg < 0:
               deg = deg + 360
+            # print("deg ",deg)
             rgba = int(deg * 4294967294 / 2 / 360 + 255)
+            # print("rgba ",rgba)
             # 4294967040 = FFFFFF00
             if chosen_grasp is not None:
               if chosen_grasp[0] == g[0] and chosen_grasp[1] == g[1] and chosen_grasp[2] == g[2]:
@@ -541,6 +654,7 @@ class Executor:
             pc2.append(p2)
         # if FAVOR_KEYPOINT:
         #   pc2 = KP.add_to_pc(pc2)
+
         pc2 = np.reshape(pc2, (len(pc2), 4))
         fields = [PointField('x', 0, PointField.FLOAT32, 1),
                   PointField('y', 4, PointField.FLOAT32, 1),
@@ -554,28 +668,42 @@ class Executor:
       # Derived from:
       # https://gist.github.com/lucasw/ea04dcd65bc944daea07612314d114bb
       for j in range(2):
-        if j == 0 and not DISPLAY_PC_DEPTH_MAP:
+        if j == 0 and not (DISPLAY_PC_DEPTH_MAP and DISPLAY_PC_RGB):
           continue
         elif j == 0:
-          pc = self.transformed_pc
-          # pc_rgb = self.transformed_pc_rgb[:,2]
-          self.base_z = compute_z_sectors(self.transformed_pc)
-          pc_rgb = pc_depth_mapping(self.transformed_pc, self.base_z)
+          # pc = self.transformed_pc
+          # pc = self.transformed_pc_rgb
+          # self.rgb, self.depth
+          print("transformed_pc ",len(self.transformed_pc_rgb))
+          pc_rgb = self.transformed_pc_rgb
+          # self.base_z = compute_z_sectors(self.transformed_pc_rgb)
+          # pc_rgb = pc_depth_mapping(self.transformed_pc, self.base_z)
+          # pc_rgb = pc_depth_mapping(self.transformed_pc_rgb, self.base_z)
+          # print("pc_rgb ",len(pc_rgb))
         elif DISPLAY_PC_RGB and j == 1:
-          pc = self.full_pc
-          pc_rgb = self.full_pc_rgb
+          # pc = self.full_pc
+          # pc_rgb = self.full_pc_rgb
+          # pc_rgb = self.transformed_pc_rgb
+          pc_rgb = self.pc_img
+          # print("full_pc ",len(self.full_pc))
+          # print("full_pc_rgb ",len(self.full_pc_rgb))
         else:
           continue
-        pc2 = []
-        for i, p in enumerate(pc):
-          p2 = [p[0],p[1],p[2],pc_rgb[i]]
-          pc2.append(p2)
+        pc2 = pc_rgb
+        # pc2 = []
+        # print("len(pc): ",len(pc))
+        # for i, p in enumerate(pc):
+          # p2 = [p[0],p[1],p[2],pc_rgb[i][3]]
+          # pc2.append(p2)
         # if FAVOR_KEYPOINT:
         #   pc2 = KP.add_to_pc(pc2)
         pc2 = np.reshape(pc2, (len(pc2), 4))
-        # print("pc2 len: ", len(pc2))
-        # print("pc2_rgb len: ", len(pc2_rgb))
-        # print("pc2[0]: ", pc2[0])
+        print("pc2 len: ", len(pc2))
+        print("pc_rgb len: ", len(pc_rgb))
+        if len(pc2) > 0:
+          print("pc2[0]: ", pc2[0])
+        else:
+          continue
         fields = [PointField('x', 0, PointField.FLOAT32, 1),
                   PointField('y', 4, PointField.FLOAT32, 1),
                   PointField('z', 8, PointField.FLOAT32, 1),

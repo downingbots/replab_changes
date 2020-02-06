@@ -6,6 +6,128 @@ from sklearn import linear_model
 from sklearn.metrics import r2_score, mean_squared_error
 import numpy as np
 import math
+from scipy.signal import convolve2d
+from scipy.ndimage import generic_filter
+from replab_core.utils import *
+
+# Current values:
+# +-.17 by +-.15 tray
+# 136 x 120 produces 16320 ~.1 inches pixels
+def rgb_depth_map_from_pc(pc, rgb_pc, fill=True, init_blank=False):
+      # rgb = np.zeros((RGB_WIDTH, RGB_HEIGHT, 1))
+      rgb = np.zeros( (RGB_WIDTH,RGB_HEIGHT, 3), dtype=np.uint8)
+      depth = np.zeros((RGB_WIDTH, RGB_HEIGHT, 1))
+      pc_map = np.full((RGB_WIDTH, RGB_HEIGHT), -1)
+      # pc_img = np.zeros((RGB_WIDTH, RGB_HEIGHT, 4))
+      pc_img = []
+      pc_b = BASE_PC_BOUNDS
+      ul = pc_b[0]  # upper left
+      br = pc_b[2]  # bottom right
+      # print("ul ",ul," br ",br)
+      x_sz = (abs(ul[0]) + abs(br[0])) 
+      y_sz = (abs(ul[1]) + abs(br[1])) 
+      # print("x_sz ",x_sz," y_sz ",y_sz)
+
+      # min_p0 = 100000000
+      # max_p0 = -100000000
+      # min_p1 = 100000000
+      # max_p1 = -100000000
+      # for i, p in enumerate(pc):
+        # min_p0 = min(p[0],min_p0)
+        # max_p0 = max(p[0],max_p0) 
+        # min_p1 = min(p[1],min_p1) 
+        # max_p1 = max(p[1],max_p1) 
+      # sz_p0 = max_p0 - min_p0 
+      # sz_p1 = max_p1 - min_p1 
+      # print("min/max", min_p0,max_p0,min_p1,max_p1)
+      # random pc should have more pc values than RGB_WIDTH/RGB_HEIGHT
+      # convert to fixed RGB_WIDTH/RGB_HEIGHT
+      for i, p in enumerate(pc):
+        # inside_polygon works for before transform and filter already applied
+        # if not inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS):
+        #   continue
+        # 0,0 is approx center of base before conversion to x/y
+        # x = int((RGB_WIDTH-1)  * (p[0] + (x_sz / 2)) / x_sz +.5) 
+        # y = int((RGB_HEIGHT-1) * (p[1] + (y_sz / 2)) / y_sz +.5)
+        # x = int((RGB_WIDTH-1)  * (p[0] - min_p0) / sz_p0 + .5)
+        # y = int((RGB_HEIGHT-1)  * (p[1] - min_p1) / sz_p1 + .5)
+        x = int((RGB_WIDTH-1)  * max(min((p[0] + (x_sz / 2)),x_sz),0) / x_sz +.5) 
+        y = int((RGB_HEIGHT-1)  * max(min((p[1] + (y_sz / 2)),y_sz),0) / y_sz +.5) 
+        # print("p0 ", p[0], " p1 ", p[1], " x ", x, " y ", y)
+        if pc_map[x,y] == -1:
+          # print(i, " pc_map", x,y,p)
+          # rgb[x,y] = p[3]
+          rgb[x,y] = rgb_pc[i][3]
+          depth[x,y] = p[2]
+          pc_map[x,y] = i
+        else:
+          # take the highest point for img as we're looking at 3d shape from top
+          if (depth[x,y] > p[2]):
+            # rgb[x,y] = p[3]
+            rgb[x,y] = rgb_pc[i][3]
+            depth[x,y] = p[2]
+            pc_map[x,y] = i
+            # print(i, " rep ",x,y)
+          # else:
+            # print(i, " dup ",x,y)
+          ## take the pt closest to center of pixel
+          ## then direct map to PC pixel (p[0],p[1],p[2]), which may 
+          ## be important for KPs
+          ## alternate approach: average multiple pc values 
+          #pp = pc[pc_map[x,y]]
+          #centerx0 = (RGB_WIDTH  * (pp[0] + (x_sz / 2))) % x_sz
+          #centery0 = (RGB_WIDTH  * (pp[1] + (y_sz / 2))) % y_sz
+          #dist0 = sqrt((.5 - centerx0)**2 + (.5 - centery)**2)
+          #centerx1 = (RGB_WIDTH  * (p[0] + (x_sz / 2))) % x_sz
+          #centery1 = (RGB_WIDTH  * (p[1] + (y_sz / 2))) % y_sz
+          #dist1 = sqrt((.5 - centerx1)**2 + (.5 - center1)**2)
+          #if (dist1 < dist0):
+          #  rgb[x,y] = p[3]
+          #  depth[x,y] = p[2]
+          #  pc_map[x,y] = i
+      # handle random PC points not covering all x,y points in rgb
+      # ARD: vectorize
+      if fill:  # move inside loop so that pc_img can still be computed
+        c = 0
+        c2 = 0
+        for x in range(RGB_WIDTH):
+          for y in range(RGB_HEIGHT):
+            if pc_map[x,y] == -1:
+              # if x == int(RGB_WIDTH/2):
+                # print("fill ",x,y)
+              s = 0
+              d = 0
+              n = 0
+              i = []
+              for delta1 in (-1,0,1):
+                for delta2 in (-1,0,1):
+                  if (0 <= (x + delta1) < RGB_WIDTH and
+                      0 <= (y + delta2) < RGB_HEIGHT and
+                      pc_map[x+delta1,y+delta2] != -1):
+                    # s += rgb[x+delta1,y+delta2]
+                    # d += depth[x+delta1,y+delta2]
+                    # n += 1
+                    rgb[x,y] = rgb[x+delta1,y+delta2]
+                    pc_map[x,y] = pc_map[x+delta1,y+delta2]
+             
+              # print("s n d ",s,n,d, " x y ", x,y)
+              if n > 0:
+                pass
+                # rgb[x,y] = int(s / n)
+                # depth[x,y] = d / n
+              else:
+                rgb[x,y] = 0
+                depth[x,y] = 0
+            if pc_map[x,y] != -1:
+              p = rgb_pc[pc_map[x,y]]
+              # if x == 0 and y < 10:
+                # print(" -> ",pc_map[x,y],p)
+              pc_img.append(p)
+              c2 += 1
+            else:
+              c += 1
+      # print("pc_map: ",c2, " nomap ",c)
+      return rgb, depth, pc_map, pc_img
 
 def get_sector(x, y):
       pc_b = BASE_PC_BOUNDS
@@ -31,6 +153,12 @@ def compute_z_sectors(pc):
         if base_z[sect] < p[2]:
           base_z[sect] = p[2]
       return base_z
+
+def distance_2d(pt1, pt2):
+   return math.sqrt((pt1[0]-pt2[0])**2 + (pt1[1]-pt2[1])**2)
+
+def distance_3d(pt1, pt2):
+   return math.sqrt((pt1[0]-pt2[0])**2 + (pt1[1]-pt2[1])**2 + (pt1[2]-pt2[2])**2)
 
 # Python PCL interface for pcl_segment_cluster does not work in 
 # some patch releases.  Workaround with python implementation.
@@ -108,6 +236,7 @@ def pc_depth_mapping(pc, base_z):
      return pc_depth
 
 
+
 # Maps 3d x/y to 2d x/y and compare to keypoints 2d x/y
 # http://docs.ros.org/kinetic/api/librealsense2/html/opencv__pointcloud__viewer_8py_source.html
 def from_2d_pixel_to_3d_point(points, pc_3d):
@@ -123,19 +252,32 @@ def from_2d_pixel_to_3d_point(points, pc_3d):
           p_x_j.append(0)
           p_y_j.append(0)
         pc_points = []
-        margins = KP_IMG_PC_MAP[0]
-        ratios  = KP_IMG_PC_MAP[1]
+        if RGB_DEPTH_FROM_PC:
+          pc_b = BASE_PC_BOUNDS
+          ul = pc_b[0]  # upper left
+          br = pc_b[2]  # bottom right
+        else:
+          margins = KP_IMG_PC_MAP[0]
+          ratios  = KP_IMG_PC_MAP[1]
         for i in range(len(pc_3d)):
           v = pc_3d[i]
           # print("v:  ",v)
           if v[2] != 0:
-            p_x = (v[0] / v[2] * IMG_HEIGHT + IMG_WIDTH/2.0) * ratios[0]
-            p_y = (v[1] / v[2] * IMG_HEIGHT + IMG_HEIGHT/2.0) * ratios[1]
+            if RGB_DEPTH_FROM_PC:
+              p_x = (v[0] / v[2] * RGB_HEIGHT + RGB_WIDTH/2.0) 
+              p_y = (v[1] / v[2] * RGB_HEIGHT + RGB_HEIGHT/2.0) 
+            else:
+              p_x = (v[0] / v[2] * IMG_HEIGHT + IMG_WIDTH/2.0) * ratios[0]
+              p_y = (v[1] / v[2] * IMG_HEIGHT + IMG_HEIGHT/2.0) * ratios[1]
             # for j,pt in enumerate(points):
             for j in range(len(points)):
               pt = points[j].pt
-              x = pt[0] + margins[0] 
-              y = pt[1] + margins[1]
+              if RGB_DEPTH_FROM_PC:
+                x = pt[0] * (abs(ul[0]) + abs(br[0])) / RGB_WIDTH
+                y = pt[1] * (abs(ul[1]) + abs(br[1])) / RGB_HEIGHT
+              else:
+                x = pt[0] + margins[0] 
+                y = pt[1] + margins[1]
               dist = math.sqrt((p_x - int(x))*(p_x - int(x)) + (p_y - int(y))*(p_y - int(y)))
               if min_dist[j] > dist:
                 min_dist[j] = dist
@@ -146,4 +288,5 @@ def from_2d_pixel_to_3d_point(points, pc_3d):
           pc_points.append(min_v[j])
         # print("pc_points: ", pc_points)
         return pc_points
+
 

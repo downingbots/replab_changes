@@ -9,6 +9,7 @@ from pickpushpolicy import *
 from policy import *
 from replab_core.config import *
 from replab_core.utils import *
+from numpy.random import choice
 
 
 def main():
@@ -55,7 +56,6 @@ def main():
         elif args.method == 'fullimage':
             policy = FullImage(FULLIMAGE_PRETRAINED_WEIGHTS)
         elif args.method == 'combined':
-            from numpy.random import choice
             policy_array = [DataCollection(noise=True), PrincipalAxis()]
             policy_array_weights = [0.67, 0.33]
             policy = choice(policy_array, 1, policy_array_weights)[-1]
@@ -76,7 +76,7 @@ def main():
             if args.method == 'pickpush':
               # higher resolution pointcloud with 1-1 mapping to rgb array
               # with different filtering 
-              pc, pc_rgb = executor.get_pc_rgb()
+              pc = executor.get_pc_rgb()
               executor.publish_pc()
             else:	
               pc = executor.get_pc()
@@ -96,6 +96,8 @@ def main():
                   grasps = policy.plan_grasp(rgb, pc)
                 else:
                   grasps = policy.plan_grasp(rgbd, pc)
+                if grasps == None:
+                  continue
                 # if args.method == 'pickpush':
                 #   pushes = policy.plan_push(rgbd, pc)
                 #   orig_grasps = grasps
@@ -128,6 +130,7 @@ def main():
                 executor.widowx.open_gripper()
                 continue
 
+            print("confidences", confidences)
             selected = np.random.choice(np.argsort(confidences)[-5:])
             grasp = grasps[kept_indices[selected]][0]
 
@@ -135,10 +138,7 @@ def main():
               print("Publish grasps")
               executor.publish_grasps(grasps, grasp)
               executor.record_grasp(grasp, grasps)
-              success, err = executor.execute_grasp(grasp, grasps,confidences,  policy)
-              # policy.evaluate_grasp(pc, pc_rgb, grasps, grasp, success, err)
-              # todo: figure out if push was selected action and perform instead
-              # success, err = executor.execute_push(push)
+              success, err = executor.execute_grasp(grasp, grasps, confidences,  policy)
             else:
               success, err = executor.execute_grasp(grasp)
 
@@ -154,26 +154,50 @@ def main():
 
             print('Success: %r %f' % (success, err))
 
-            if success:
-                # angle = [-1.57, 1.57][np.random.random() > .5]
-                # executor.widowx.move_to_drop(angle)
-                if args.method == 'pickpush':
-                  # if move:
-                  #   policy.plan_drop()
-                  # executor.widowx.move_to_drop()
-                  # executor.widowx.move_to_reset()
-                  # Currently drop is done in executer.py
-                  pass
-                else:
-                  executor.widowx.move_to_reset()
-                  executor.widowx.open_gripper(drop=True)
-            else:
-                executor.widowx.move_to_reset()
-                executor.widowx.open_gripper(drop=True)
+#            if success:
+#                # angle = [-1.57, 1.57][np.random.random() > .5]
+#                # executor.widowx.move_to_drop(angle)
+#                if args.method == 'pickpush':
+#                  # if move:
+#                  #   policy.plan_drop()
+#                  # executor.widowx.move_to_drop()
+#                  # executor.widowx.move_to_reset()
+#                  # Currently drop is done in executer.py
+#                  #
+#                  # policy.evaluate_grasp(pc, pc_rgb, grasps, grasp, success, err)
+#                  # todo: figure out if push was selected action and perform instead
+#                  # success, err = executor.execute_push(push)
+#                  selected_action = ["PICKUP", "PUSH"][np.random.random() > .5]
+#                  success, err = executor.execute_grasp(grasp, grasps, confidences,  policy, action = selected_action)
+#
+#                else:
+#                  executor.widowx.move_to_reset()
+#                  executor.widowx.open_gripper(drop=True)
+#            else:
+#                executor.widowx.move_to_reset()
+#                executor.widowx.open_gripper(drop=True)
 
-            executor.widowx.move_to_neutral()
-
-            executor.widowx.open_gripper()
+#            if success:
+#                # angle = [-1.57, 1.57][np.random.random() > .5]
+#                # executor.widowx.move_to_drop(angle)
+#                if args.method == 'pickpush':
+#                  # if move:
+#                  #   policy.plan_drop()
+#                  # executor.widowx.move_to_drop()
+#                  # executor.widowx.move_to_reset()
+#                  # Currently drop is done in executer.py
+#                  #
+#                  # policy.evaluate_grasp(pc, pc_rgb, grasps, grasp, success, err)
+#                else:
+#                  executor.widowx.move_to_reset()
+#                  executor.widowx.open_gripper(drop=True)
+#            else:
+#                executor.widowx.move_to_reset()
+#                executor.widowx.open_gripper(drop=True)
+#
+#            executor.widowx.move_to_neutral()
+#
+#            executor.widowx.open_gripper()
 
             if counter % 500 == 499:
                 executor.widowx.sweep_arena()

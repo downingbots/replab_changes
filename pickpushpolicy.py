@@ -8,6 +8,8 @@ from utils_grasp import *
 from config_grasp import *
 from policy import *
 from keypoint import *
+from cluster import *
+from world import *
 # from replab_grasping.utils_grasp import *
 # from replab_grasping.config_grasp import *
 # from replab_grasping.policy import *
@@ -16,6 +18,7 @@ from scipy import spatial
 from scipy.stats import linregress
 import statistics
 import math
+import sys
 
 import traceback
 
@@ -40,6 +43,7 @@ class PickPushCollection(Policy):
         # print("old pc[0]: ", pc[0])
         # print("new pc[0]: ", pc1[0])
 
+        sys.setrecursionlimit(20000)
         kdtree = spatial.KDTree(pc1)
         if COMPUTE_KEYPOINT:
           # return np.concatenate([self.rgb, depth], axis=2)
@@ -60,7 +64,15 @@ class PickPushCollection(Policy):
           KP.publish_pc(pc)
         else:
           KP = None
-        clusters.analyze_pc(pc, KP)
+        pc_clusters = WorldState()
+        if pc_clusters.analyze_pc(pc, KP, self.min_samples) == False:
+          self.min_samples -= 1
+          return None
+        if self.world_clusters == None:
+          self.world_clusters = WorldState()
+          self.world_clusters.initialize_world(pc_clusters)
+        else:
+          self.world_clusters.integrate_current_pc_into_world(pc_clusters,KP)
 
         evaluated  = None
         grasps = None     #  x, y, z, theta, probabilities = grasp
@@ -111,7 +123,7 @@ class PickPushCollection(Policy):
           pc3 = [pc1[n] for i, n in enumerate(neighbors) 
                  if abs(p[2] - pc1[n][2]) <= MIN_GRIP_HEIGHT]
           if len(pc3) < MIN_NEIGHBOR_THRESH:
-            print("Min Neighbors: ", len(pc3), len(pc2))
+            # print("Min Neighbors: ", len(pc3), len(pc2))
             continue
           # x_mean = sum(pc3[0])/len(pc3[0])
           # y_mean = sum(pc3[1])/len(pc3[1])
@@ -132,57 +144,69 @@ class PickPushCollection(Policy):
           # find gripper orientation
           if len(x3) <= 1:
             degrees = 0
+            # print("degrees", degrees)
             success = False
             num = num+1
           else:
-            slope, intercept, r_value, p_value, std_err = linregress(x3, y3)
-            angle = math.atan(slope)             # slope angle in radians
-            degrees = math.degrees(angle)        # slope angle in degrees
-            # thetas.append(np.arctan2(eigv[1], eigv[0]) % np.pi)
-            # to convert from degrees to radians, multiply by pi/180.
-            theta = angle
-
-            # make sure it's a feasible grasp
             success = True
-            expand_grip_height = True
-            for i, x1 in enumerate(x):
-              d = shortest_distance_from_line( x1, y[i], slope, -1, intercept)
-              if FAVOR_KEYPOINT and kp_neighbor:
-                gw = GRIPPER_WIDTH
-              else:
-                gw = GRIPPER_WIDTH/2    # 0.01143
-              if (d > gw):
-                # too wide to grip
-                # z=.25 or .00625 is deep enough, anything deeper is gravy
-                if abs(p[2] - z[i]) <= MIN_GRIP_HEIGHT: # required to grip
-                  num = num+1
-                  # print("OOB:", i, "x:", round(x1,5), "y:", round(y[i],5), "d",round(d,5), "slope", round(slope,5), "inter", round(intercept,5), "zdif", round(abs(p[2] - z[i]),5) )
-                  if num > oob_thresh:
-                    success = False
-                    if FAVOR_KEYPOINT and kp_neighbor:
-                      print("failed: gripper distance: ", d)
-                      print("failed: depth distance: ", abs(p[2] - z[i]))
-                  # break
+            try:
+              slope, intercept, r_value, p_value, std_err = linregress(x3, y3)
+            except:
+              print("Unexpected error:", sys.exc_info()[0])
+              success = False
+            if math.isnan(slope):
+              success = False
+              print("Slope is NaN")
+
+            if success:
+              angle = math.atan(slope)             # slope angle in radians
+              degrees = math.degrees(angle)        # slope angle in degrees
+              # print("degrees", degrees, " = angle", angle, " slope ", slope, "x3",x3,y3)
+              # thetas.append(np.arctan2(eigv[1], eigv[0]) % np.pi)
+              # to convert from degrees to radians, multiply by pi/180.
+              theta = angle
+  
+              # make sure it's a feasible grasp
+              # success = True
+              expand_grip_height = True
+              for i, x1 in enumerate(x):
+                d = shortest_distance_from_line( x1, y[i], slope, -1, intercept)
+                if FAVOR_KEYPOINT and kp_neighbor:
+                  gw = GRIPPER_WIDTH
                 else:
-                  # can't grip farther than this, but doesn't eliminate grip
-                  max_grip_height = min(abs(p[2] - z[i]), max_grip_height)
-                  # can't grip farther than this
-                  expand_grip_height = False
-                  z_grip = min(z_grip, z[i])
-                  # z_grip = max(z_grip, p[2] + MIN_GRIP_HEIGHT)
-                  if (max_grip_height >  MIN_GRIP_HEIGHT and
-                     max_grip_height <= GRIPPER_HEIGHT):
-                    z_grip = min(z_grip, p[2] + max_grip_height)
-                  elif max_grip_height > GRIPPER_HEIGHT:
-                    z_grip = p[2] + GRIPPER_HEIGHT
-              elif expand_grip_height:
-                  max_grip_height = max(abs(p[2] - z[i]), max_grip_height)
-                  if max_grip_height <= GRIPPER_HEIGHT:
-                    z_grip = max(z_grip, z[i])
+                  gw = GRIPPER_WIDTH/2    # 0.01143
+                if (d > gw):
+                  # too wide to grip
+                  # z=.25 or .00625 is deep enough, anything deeper is gravy
+                  if abs(p[2] - z[i]) <= MIN_GRIP_HEIGHT: # required to grip
+                    num = num+1
+                    # print("OOB:", i, "x:", round(x1,5), "y:", round(y[i],5), "d",round(d,5), "slope", round(slope,5), "inter", round(intercept,5), "zdif", round(abs(p[2] - z[i]),5) )
+                    if num > oob_thresh:
+                      success = False
+                      if FAVOR_KEYPOINT and kp_neighbor:
+                        print("failed: gripper distance: ", d)
+                        print("failed: depth distance: ", abs(p[2] - z[i]))
+                    # break
                   else:
-                    z_grip = p[2] + GRIPPER_HEIGHT
-              z_grip = max(z_grip, p[2] + MIN_GRIP_HEIGHT)
-              z_grip = min(z_grip, p[2] + GRIPPER_HEIGHT)
+                    # can't grip farther than this, but doesn't eliminate grip
+                    max_grip_height = min(abs(p[2] - z[i]), max_grip_height)
+                    # can't grip farther than this
+                    expand_grip_height = False
+                    z_grip = min(z_grip, z[i])
+                    # z_grip = max(z_grip, p[2] + MIN_GRIP_HEIGHT)
+                    if (max_grip_height >  MIN_GRIP_HEIGHT and
+                       max_grip_height <= GRIPPER_HEIGHT):
+                      z_grip = min(z_grip, p[2] + max_grip_height)
+                    elif max_grip_height > GRIPPER_HEIGHT:
+                      z_grip = p[2] + GRIPPER_HEIGHT
+                elif expand_grip_height:
+                    max_grip_height = max(abs(p[2] - z[i]), max_grip_height)
+                    if max_grip_height <= GRIPPER_HEIGHT:
+                      z_grip = max(z_grip, z[i])
+                    else:
+                      z_grip = p[2] + GRIPPER_HEIGHT
+                z_grip = max(z_grip, p[2] + MIN_GRIP_HEIGHT)
+                z_grip = min(z_grip, p[2] + GRIPPER_HEIGHT)
 
           # z_grip = z_grip + Z_PLATFORM
           if num <= oob_thresh:
@@ -208,33 +232,74 @@ class PickPushCollection(Policy):
               evaluated.append(n)
 
         grasp_conf = self.assign_grasp_confidence(grasps)
-        clusters.assign_grasps(grasp_conf)
+        # if len(self.world_clusters.clusters) > 0:
+        self.world_clusters.assign_grasps(grasp_conf)
+        # if len(pc_clusters.clusters) > 0:
+          # pc_clusters.assign_grasps(grasp_conf)
         return grasp_conf
 
     def assign_grasp_confidence(self, grasps):
+        def take_z_axis(elem):
+          return elem[1]
+
         if grasps is None or len(grasps) == 0:
           return None
         # else base on interesting clusters
         # prioritize the top center of cluster
-        else:
-          prob = 1 / len(grasps)
-          return [((g[0], g[1], g[2], g[3]), prob) for i,g in enumerate(grasps)]
+        # ARD TODO: eventually replace by: 
+        # self.world_clusters.world_grasp_probabilities(..)
+        # else:
+        #   prob = 1 / len(grasps)
+        #   return [[[g[0], g[1], g[2], g[3]], prob] for i,g in enumerate(grasps)]
+        #
+        # assign probability weighted towards highest grasp
+        tot = 0
+        idx = [[0,0] for i in range(len(grasps))]
+        for j,g in enumerate(grasps):
+          idx[j][0] = j
+          idx[j][1] = g[2]
+          tot += j
+        idx = sorted(idx, key=take_z_axis)
+        prob = [0.0 for i in range(len(grasps))]
+        sum = 0
+        for j in range(len(grasps)):
+          # sum = j
+          i = idx[j][0]
+          prob[i] = 1.0 * (len(grasps) - j) / tot
+          print(i," height ", idx[j][1], " prob ",prob[i])
+        return [[[g[0], g[1], g[2], g[3]], prob[i]] for i,g in enumerate(grasps)]
+
 
     def evaluate_drop(self, grasp, grasps, position, e_i, a_i):
       # did the cluster move after being dropped?
       # ensure that the gripper is or can be closed
+      pass
 
-    def evaluate_grasp(self, grasp, grasps, position, e_i, a_i):
+    def evaluate_grasp(self, grasp, grasps, pose, joints, e_i=None, a_i=None):
         # ISOLATE until YOLO is trained
         self.action_mode = "ISOLATE"     # ISOLATE, INTERACT, CURIOSITY
 
         eval_grasp_action = {}
-        pose = self.get_pose()
         eval_grasp_action['EVA_POSE'] = [pose[0],pose[1],pose[2],pose[3]]
         eval_grasp_action['EVA_NEW_POSE'] = [pose[0],pose[1],pose[2],pose[3]]
-        eval_grasp_action['EVA_SUCCESS'], eval_grasp_action['EVA_CLOSURE'] = self.widowx.eval_grasp(manual=manual)
+        # ARD: widowx should not be called by policy directly. OK in collect.py
+        # eval_grasp_action['EVA_SUCCESS'], eval_grasp_action['EVA_CLOSURE'] = self.widowx.eval_grasp(manual=manual)
+        # eval_grasp_action['EVA_SUCCESS'], eval_grasp_action['EVA_CLOSURE'] = self.widowx.eval_grasp(manual=manual)
+        # print("eval_grasp: ", threshold, manual)
+        # GRIPPER_CLOSED = [.003, .003]
+        gripper_gap = joints[0] - np.array(GRIPPER_CLOSED[0])
+        threshold=.0003
+        if (gripper_gap > threshold):
+          print("eval_grasp:", gripper_gap, joints[0], pose[0])
+          eval_grasp_action['EVA_SUCCESS'] = True
+          eval_grasp_action['EVA_CLOSURE'] = gripper_gap
+        else:
+          eval_grasp_action['EVA_SUCCESS'] = False
+          eval_grasp_action['EVA_CLOSURE'] = 0
+        # print("eval_grasp: ", threshold, manual)
 
-        if eval_grasp_action['EVA_SUCCESS']:
+        iterator = 1          # ARD: huh? Needs to be fleshed out
+        if eval_grasp_action['EVA_SUCCESS'] and False:
           print("successful grasp: ",  eval_grasp_action['EVA_CLOSURE'])
           cluster_id = cluster.cluster_contains(grasp)
           if cluster.is_isolated():
@@ -253,20 +318,20 @@ class PickPushCollection(Policy):
             eval_grasp_action['EVA_ACTION'] = "ISOLATED_DROP"
             eval_grasp_action['EVA_REWARD'] = 1
           # else look cluster interaction using AIMED_DROP
-          else
+          else:
             eval_grasp_action['EVA_ACTION'] = "RANDOM_DROP"
             eval_grasp_action['EVA_REWARD'] = 1
         elif iterator == 2:
           eval_grasp_action['EVA_ACTION'] = "EVAL_WORLD_ACTION"
         elif iterator == 3:
-          if eval_world_action['EWA_STATE'] = "UNCHANGED":
+          if eval_world_action['EWA_STATE'] == "UNCHANGED":
             eval_grasp_action['EVA_ACTION'] = "RETRY_GRASP"
             eval_grasp_action['EVA_REWARD'] = 0
             new_x += (random() * 2 - 1) * INCH
             new_y += (random() * 2 - 1) * INCH
             new_z += (random() * 2 - 1) * INCH
             # new_theta unchanged (?)
-          elif eval_world_action['EWA_STATE'] = "MOVED":
+          elif eval_world_action['EWA_STATE'] == "MOVED":
             eval_grasp_action['EVA_ACTION'] = "NO_DROP"
             eval_grasp_action['EVA_REWARD'] = eval_world_action['REWARD'] 
         elif iterator == 4:
@@ -289,7 +354,8 @@ class PickPushCollection(Policy):
           self.grasp_hist.append(grasp)
           eval_grasp_action['EVA_ACTION'] = "RETRY_GRASP"
           print("unsuccessful grasp: ", eval_grasp_action['EVA_CLOSURE'])
-        elif iterator < ::
+        # elif iterator < ::
+        else:
           eval_grasp_action['EVA_ACTION'] = "NO_DROP"
           print("unsuccessful grasp2: ", eval_grasp_action['EVA_CLOSURE'])
         # compare keypoints for planned object
@@ -302,15 +368,18 @@ class PickPushCollection(Policy):
         # reinforcement learning NN. Bound move.
         return eval_grasp_action
 
-    def evaluate_world(self, grasp, grasps, position, e_i, a_i):
-        success, closure = self.widowx.eval_grasp(manual=manual)
+    def evaluate_world(self, grasp=None, grasps=None, position=None, e_i=None, a_i=None):
+        # ARD: widowx should not be called by policy directly. OK in collect.py
+        # success, closure = self.widowx.eval_grasp(manual=manual)
         # T, distances, i = icp(A, B)   # nxM matrices
         # look for differences
-        return success
+        # return success
+        return True
 
-    def __init__(self, event_history):
-        clusters = clusterState()
-        recent_grasps = None
+    def __init__(self, event_history=None):
+        self.min_samples = CLUSTER_MIN_SZ
+        self.world_clusters = None
+        self.recent_grasps = None
       
 
 

@@ -1,11 +1,16 @@
 PICK_PLACE_METHOD  = 'pickpush'
-SECTOR_SIZE = 5
+# SECTOR_SIZE = 5
+SECTOR_SIZE = 8
 BASE_PC_BOUNDS = [(-.17,  .15),
 		  ( .17,  .15),
 		  ( .17, -.15),
 		  (-.17, -.15)]
 
 BASE_HEIGHT_BOUNDS = (.39, .49)
+
+# Playground is an area of ATTENTION
+PLAYGROUND     = [(-.08,  -.08),
+		  ( .0,   .08)]
 
 # use rgb derived from transformed pc 
 # pickpush policy is based purely on this rgbd
@@ -32,6 +37,10 @@ PC_RGB_TOPIC         = '/pc_rgb'
 PC_GRASPS_TOPIC      = '/pc_grasps'
 PC_KP_TOPIC          = '/pc_kp'
 PC_CLUSTER_TOPIC     = '/pc_clusters'
+
+CLUSTER_MIN_SZ    = 20
+# CLUSTER_EPS       = 1  # computed, in thousands...
+# CLUSTER_EPS_DELTA = 1
 
 INCH             = 0.0254
 GRIPPER_WIDTH    = 0.9 * INCH
@@ -63,3 +72,5 @@ KP_IMG_MARGIN_DIM = [(119, 518), (40,590)]
 KP_IMG_PC_MAP = [(110, 90), (1.3, 1.03)]
 
 HISTORY_NUM_EVENTS = 5
+
+BIGNUM = 100000000
