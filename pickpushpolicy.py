@@ -38,13 +38,18 @@ class PickPushCollection(Policy):
         def take_z_axis(elem):
           return elem[2]
 
-
+        # pc is cluster only; tray has been filtered out
+        # pc has duplicates; filter them out
+        # Sorting used by grasp analysis to compute distances
         pc1 = sorted(pc, key=take_z_axis)
-        # print("old pc[0]: ", pc[0])
-        # print("new pc[0]: ", pc1[0])
+        print("len pc1:", len(pc1))
+        pc1 = [p for i, p in enumerate(pc1) if (i > 0 and pc1[i-1][0] != p[0] and pc1[i-1][1] != p[1] and pc1[i-1][2] != p[2])]
+        print("len pc1 no dups:", len(pc1), len(pc1[0]), len(rgb[0]))
 
+        ##################
+        # CLUSTER ANALYSIS
+        ##################
         sys.setrecursionlimit(20000)
-        kdtree = spatial.KDTree(pc1)
         if COMPUTE_KEYPOINT:
           # return np.concatenate([self.rgb, depth], axis=2)
           # rgb = np.split([self.rgb, depth], axis=2)
@@ -59,13 +64,16 @@ class PickPushCollection(Policy):
           #     rgb.append((rgbd[i][j][0], rgbd[i][j][1], rgbd[i][j][3]))
           KP = Keypoints(rgb)
           KP.publish_img(rgb)
+          # KP.set_rgb_pc_map(pc_map)
           # self.keypoints = KP.get_kp
-          kp_pc_points = KP.kp_to_3d_point(pc)
-          KP.publish_pc(pc)
+          kp_pc_points = KP.kp_to_3d_point(pc1)  
+          KP.publish_pc(pc1)
+          # print("KP_PC_POINTS:",kp_pc_points)
         else:
           KP = None
+# ARD:
         pc_clusters = WorldState()
-        if pc_clusters.analyze_pc(pc, KP, self.min_samples) == False:
+        if pc_clusters.analyze_pc(pc1, KP, self.min_samples) == False:
           self.min_samples -= 1
           return None
         if self.world_clusters == None:
@@ -74,12 +82,31 @@ class PickPushCollection(Policy):
         else:
           self.world_clusters.integrate_current_pc_into_world(pc_clusters,KP)
 
+        ###################
+        # GRASPING ANALYSIS
+        ###################
+        kdtree = spatial.KDTree(pc1)
+#       dist, _ = kdtree.query(pc1, k=1)
+        # # ARD: Huge reduction of points (~5K to ~975 with dups, 670 no dups
+        # # ARD: Better off using get_pc_rgb()?
+        # ARD: pc1 is cluster only; tray has been filtered out
+        # ARD: w dup: 975, no dup: 670 with spacing between points
+        # ARD: OK for choosing grasp, but use rgb for cluster analysis
+#       grasp_pc = [p for i, p in enumerate(pc1) if dist[i] > .003]
+#       print("len grasp_pc:", len(grasp_pc))
+        # PC_BOUNDS, HEIGH_BOUNDS now done in rgb_depth_map_from_pc()
+        # pc = [p for i, p in enumerate(pc) if inside_polygon(
+        #     p, PC_BOUNDS, HEIGHT_BOUNDS) and dist[i] > .003]
+
+        # print("old pc[0]: ", pc[0])
+        # print("new pc[0]: ", pc1[0])
+
+        grasp_pc = pc1
         evaluated  = None
         grasps = None     #  x, y, z, theta, probabilities = grasp
         success = False
         skipped_evaluated = False
-        # base_z = compute_z_sectors(pc1)
-        for p_i, p in enumerate(pc1):
+        for p_i, p in enumerate(grasp_pc):
 
           if evaluated is not None and p_i in evaluated:
             # if not skipped_evaluated:
@@ -217,14 +244,16 @@ class PickPushCollection(Policy):
             if success:
               precision = 5
               g = [round(x_mean, precision), round(y_mean, precision), round(z_grip, precision), round(theta, precision)]
-              grasps = []
-              grasps.append(g)
+              if self.world_clusters.in_any_obb([g[0],g[1],g[2]]):
+                grasps = []
+                grasps.append(g)
           else:
             if success:
               g = [round(x_mean, precision), round(y_mean, precision), round(z_grip, precision), round(theta, precision)]
-              if g not in grasps:
-                grasps.append(g)
-              print("Grasp x: ", x_mean, " y: ", y_mean, " deg: ", theta, " z: ", z_grip)
+              if self.world_clusters.in_any_obb([g[0],g[1],g[2]]):
+                if g not in grasps:
+                  grasps.append(g)
+                  print("Grasp x: ", x_mean, " y: ", y_mean, " deg: ", theta, " z: ", z_grip)
           if evaluated is None:
             evaluated = []
           for n_i, n in enumerate(neighbors):
@@ -252,21 +281,40 @@ class PickPushCollection(Policy):
         #   prob = 1 / len(grasps)
         #   return [[[g[0], g[1], g[2], g[3]], prob] for i,g in enumerate(grasps)]
         #
-        # assign probability weighted towards highest grasp
         tot = 0
         idx = [[0,0] for i in range(len(grasps))]
         for j,g in enumerate(grasps):
           idx[j][0] = j
           idx[j][1] = g[2]
           tot += j
+
+        # sort by highest grasp
         idx = sorted(idx, key=take_z_axis)
+        # combine cluster of grasps into single grasp with middle
+
+        # idx2 = self.world_clusters.reorder_by_cluster_xy_center(grasps, idx)
+        
+
+
+
+        # idx2 = self.world_clusters.reorder_by_cluster_xy_center(grasps, idx)
+
+
         prob = [0.0 for i in range(len(grasps))]
         sum = 0
         for j in range(len(grasps)):
           # sum = j
           i = idx[j][0]
-          prob[i] = 1.0 * (len(grasps) - j) / tot
-          print(i," height ", idx[j][1], " prob ",prob[i])
+          if tot > 0:
+            prob[i] = 1.0 * (len(grasps) - j) / tot
+          else:
+            prob[i] = 0
+          print(i," grasp height ", idx[j][1], " prob ",prob[i])
+
+        # assign probability weighted towards x-y center of a cluster
+       
+        # prune those too close to higher-probability grasps
+
         return [[[g[0], g[1], g[2], g[3]], prob[i]] for i,g in enumerate(grasps)]
 
 

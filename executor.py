@@ -220,9 +220,10 @@ class Executor:
         # print("rgb_pc shape0 ", rgb_pc.shape[0])
         print("rgb_pc shape ", rgb_pc.shape)
         # if rgb_pc.shape[0] > RGB_PC_DENSITY:
-        if len(rgb_pc) > RGB_PC_DENSITY:
-          rgb_pc = rgb_pc[:RGB_PC_DENSITY]
-          print("len rgb_pc ", len(rgb_pc))
+        # After filtering out Tray, RGb_PC_DENSTITY is not sufficient
+        # if len(rgb_pc) > RGB_PC_DENSITY:
+        #   rgb_pc = rgb_pc[:RGB_PC_DENSITY]
+        #   print("len rgb_pc ", len(rgb_pc))
         pc = np.array(rgb_pc)[:, :3]
 
         def transform_pc(srcpc, tf_matrix):
@@ -233,20 +234,43 @@ class Executor:
 
         pc = transform_pc(pc, self.cm)
 
+        # put rgb back in pc
         # print("b4 len pc ", len(pc))
         rgb_pc = [[p[0],p[1],p[2],rgb_pc[i][3]] for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS)]
-        pc = [p for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS)]
+        pc = rgb_pc
+        # pc = [p for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS)]
         # rgb_pc = [[p[0],p[1],p[2],rgb_pc[i][3]] for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS)]
         # rgb_pc = [[p[0],p[1],p[2],rgb_pc[i][3]] for i, p in enumerate(pc)]
         # pc = [p for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS)]
         print("len pc ", len(pc))
-        if len(pc) > 0:
-          print("pc[0]: ",pc[0])
+        # if len(pc) > 0:
+          # print("pc[0]: ",pc[0])
         if RGB_DEPTH_FROM_PC:
           # get 2d rgb image, with associated depth, and a mapping to full pc
           self.rgb, self.depth, self.pc_map, self.pc_img = rgb_depth_map_from_pc(pc,rgb_pc)
           self.full_pc = pc
           self.sample['full_pc'] = self.full_pc
+
+        ######################
+        # Filter out base tray
+        ######################
+        print("prefilter pc len:",len(pc))
+        self.base_z = compute_z_sectors(pc)
+        # ARD: any (base_z - MIN_OBJ_HEIGHT) greater than .485 is suspect...
+        # print(MIN_OBJ_HEIGHT, " sector base_z:", self.base_z)
+        pc2_rgb = []
+        for i, p in enumerate(pc):
+             sect = get_sector(p[0],p[1])
+             if (p[2] > self.base_z[sect] - MIN_OBJ_HEIGHT):
+               # if i < 10:
+                 # print("TOO CLOSE TO GROUND ", p[2], self.base_z[sect], MIN_OBJ_HEIGHT)
+               continue
+             if (p[2] > 0.485):
+               print("suspect sector: ", sect, self.base_z[sect], p)
+             pc2_rgb.append(p)
+        pc = pc2_rgb
+        print("postfilter pc len:",len(pc))
+        ######################
 
         # ARD: TEST
         # self.transformed_pc_rgb = self.pc_img
@@ -255,18 +279,26 @@ class Executor:
         # ARD: END TEST
         # do further PC size reduction for kdtree and grip analysis
         # if pc.shape[0] > PC_DENSITY:
-        pc = np.array(self.pc_img)[:, :3]
+        # pc = np.array(self.pc_img)[:, :3]
         if len(pc) > PC_DENSITY:
             pc = pc[:PC_DENSITY]
+        print("pruned pc len:",len(pc))
 
-        dist, _ = self.kdtree.query(pc, k=1)
-        pc = [p for i, p in enumerate(pc) if dist[i] > .003]
-        # PC_BOUNDS, HEIGH_BOUNDS now done in rgb_depth_map_from_pc()
-        # pc = [p for i, p in enumerate(pc) if inside_polygon(
-        #     p, PC_BOUNDS, HEIGHT_BOUNDS) and dist[i] > .003]
+# Moved to plan_grasp
+#        dist, _ = self.kdtree.query(pc, k=1)
+#        # ARD: Huge reduction of points (~5K to ~975 with dups, 670 no dups
+#        # ARD: Better off using get_pc_rgb()?
+#        pc = [p for i, p in enumerate(pc) if dist[i] > .003]
+#        # PC_BOUNDS, HEIGH_BOUNDS now done in rgb_depth_map_from_pc()
+#        # pc = [p for i, p in enumerate(pc) if inside_polygon(
+#        #     p, PC_BOUNDS, HEIGHT_BOUNDS) and dist[i] > .003]
 
-
-        return np.reshape(pc, (len(pc), 3))
+        # pc = np.reshape(pc, (len(pc), 3))
+        pc = np.reshape(pc, (len(pc), 4))
+        self.transformed_pc_rgb = pc
+        # for i, p in enumerate(pc):
+          # print(i,"pc",pc[i])
+        return pc
 
     # return img
     def get_rgb(self):
@@ -291,10 +323,12 @@ class Executor:
           # print("fpc ",len(self.full_pc))
           # print("fpc2",self.full_pc[0].shape)
           # self.full_pc_rgb = np.array(self.full_pc)[:, :4]
-          print("pc_img ",len(self.pc_img))
+          print("pc_img ",len(self.pc_img))    # 16320 == (120x136)
           pc = self.pc_img
         else:
-          # ARD
+          ###################
+          # ARD: No longer used
+          #vvvvvvvvvvvvvvvvvv
           # while (not self.pc_ready):
           #   yield
           prev_pc_cnt = -1
@@ -343,7 +377,14 @@ class Executor:
                 if DISPLAY_PC_RGB:
                   pc_rgb.append(p)
             print("len full_pc: ",len(self.full_pc), " vs. inbound ", len(pc_rgb))
+          #vvvvvvvvvvvvvvvvvv
+          # ARD: End No longer used
+          ###################
 
+        ######################
+        # Filter out base tray
+        ######################
+        # prefilter: 16320.  Post-filter: 965, with duplicates
         self.base_z = compute_z_sectors(pc)
         pc2 = []
         if DISPLAY_PC_RGB:
@@ -367,6 +408,8 @@ class Executor:
         # print("len1 pc inbounds: ",len(self.pc), " pc[0]= ", self.pc[0])
         # return self.pc, self.pc_rgb
         # return self.transformed_pc, self.transformed_pc_rgb
+
+        # ARD: Used by plan_grasp()
         return self.transformed_pc_rgb
 
     def scan_base(self, scans=100):
@@ -511,7 +554,7 @@ class Executor:
             eval_world_action = policy.evaluate_world()
 
             # GRAB COMPLETE; DO DROP IF SUCCESSFUL
-            action = eval_world_action['EVA_ACTION']
+            # action = eval_world_action['EVA_ACTION']
             action = "RANDOM_DROP"
             if action in ["NO_DROP","PUSH","RANDOM_DROP","AIMED_DROP","ISOLATED_DROP"]:
               def pos_neg():
@@ -550,49 +593,52 @@ class Executor:
                 assert self.widowx.orient_to_pregrasp(
                   x, y), 'Failed to orient to target'
                 self.record_action("FLIP_DROP","orient_to_pregrasp",
-                      [["GOAL_X", new_x]["GOAL_Y", new_y]])
+                      [{"GOAL_X", new_x},{"GOAL_Y", new_y}])
                 prelift_z = min(PRELIFT_HEIGHT, (z - GRIPPER_OFFSET - .02))
                 assert self.widowx.move_to_grasp(x, y, prelift_z, theta), \
                     'Failed to reach pre-lift pose'
                 self.record_action("FLIP_DROP","move_to_grasp",
-                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]])
+                    [{"GOAL_X", new_x},{"GOAL_Y", new_y},{"GOAL_Z", prelift_z},{"GOAL_THETA", new_theta}])
                 # Flips 90 degrees and drops
                 assert self.widowx.flip_and_drop(), 'Failed to flip and drop'
                 self.record_action("FLIP_DROP","flip_and_drop")
                 assert self.widowx.move_to_grasp(
                     x, y, z, theta), 'Failed to execute grasp'
                 self.record_action("FLIP_DROP","move_to_grasp",
-                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]], True)
+                    [{"GOAL_X", new_x},{"GOAL_Y", new_y},{"GOAL_Z", prelift_z},{"GOAL_THETA", new_theta}], True)
                 self.widowx.open_gripper()
                 self.record_action(action, "open_gripper")
               else:
+                # default z is to place near base
+                x = new_x
+                y = new_y
+                z = new_z
+                theta = new_theta
+                if len(self.base_z) != 0:
+                  sect = get_sector(x,y)
+                  z_at_base = min(z, self.base_z[sect])
+                z_at_base -= GRIPPER_OFFSET
                 if (action == "RANDOM_DROP"):
                   x = random() * self.drop_eeb[0] * pos_neg()
                   y = random() * self.drop_eeb[1] * pos_neg()
+                  z = prelift_z   
                 elif (action == "AIMED_DROP"):
-                  x,y,_ = interesting_cluster()
+                  x,y,z = interesting_cluster()
                 elif action == "ISOLATED_DROP":
                   x,y,z = unoccupated_space()
                 elif action == "PLAYGROUND_DROP":
                   x,y,z = unoccupated_playground_space()
           
-                if action == "ISOLATED_DROP":
-                  # drop near bottom
-                  if len(self.base_z) != 0:
-                    sect = get_sector(x,y)
-                    z = min(z, self.base_z[sect])
-                  z -= GRIPPER_OFFSET
-
                 assert self.widowx.move_to_grasp(x, y, prelift_z, new_theta), \
                     'Failed to reach pre-lift pose'
                 self.record_action(action,"move_to_grasp",
-                    [["GOAL_X", new_x],["GOAL_Y", new_y],["GOAL_Z", prelift_z],["GOAL_THETA", new_theta]])
+                    [{"GOAL_X", new_x},{"GOAL_Y", new_y},{"GOAL_Z", prelift_z},{"GOAL_THETA", new_theta}])
                 assert self.widowx.move_to_grasp(
                     x, y, z, theta), 'Failed to drop'
                 self.record_action(action,"move_to_grasp",
-                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]], True)
+                    [{"GOAL_X", new_x},{"GOAL_Y", new_y},{"GOAL_Z", prelift_z},{"GOAL_THETA", new_theta}], True)
                 reached = self.widowx.move_to_vertical(z)
-                self.record_action(action,"move_to_vertical",[["GOAL_Z",z]])
+                self.record_action(action,"move_to_vertical",[{"GOAL_Z",z}])
                 self.widowx.open_gripper()
                 self.record_action(action,"open_gripper",True)
                 rospy.sleep(2)

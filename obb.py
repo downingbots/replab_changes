@@ -1,5 +1,7 @@
 from numpy import ndarray, array, asarray, dot, cross, cov, array, finfo, min as npmin, max as npmax
 from numpy.linalg import eigh, norm
+from scipy.spatial import ConvexHull
+import sys
 
 
 ########################################################################################################################
@@ -16,56 +18,42 @@ class OBB:
         return dot(array(point), self.rotation)
 
     @property
+    def get_min(self):
+      return self.transform(self.min)
+
+    @property
+    def get_max(self):
+      return self.transform(self.max)
+
+    @property
     def centroid(self):
         return self.transform((self.min + self.max) / 2.0)
 
     @property
     def extents(self):
+        # ARD: bug fix. Min/Max are already transformed
         return abs(self.transform((self.max - self.min) / 2.0))
 
-    @property
-    def points3d(self):
-        return [
-            # upper cap: ccw order in a right-hand system
-            # rightmost, topmost, farthest
-            [self.max[0], self.max[1], self.min[2]],
-            # leftmost, topmost, farthest
-            [self.min[0], self.max[1], self.min[2]],
-            # leftmost, topmost, closest
-            [self.min[0], self.max[1], self.max[2]],
-            # rightmost, topmost, closest
-            self.max,
-            # lower cap: cw order in a right-hand system
-            # leftmost, bottommost, farthest
-            self.min,
-            # rightmost, bottommost, farthest
-            [self.max[0], self.min[1], self.min[2]],
-            # bottommost, closest
-            [self.max[0], self.min[1], self.max[2]],
-            # leftmost, bottommost, closest
-            [self.min[0], self.min[1], self.max[2]],
-        ]
- 
     @property
     def points(self):
         return [
             # upper cap: ccw order in a right-hand system
-            # rightmost, topmost, farthest
+            # 0: rightmost, topmost, farthest
             self.transform((self.max[0], self.max[1], self.min[2])),
-            # leftmost, topmost, farthest
+            # 1: leftmost, topmost, farthest
             self.transform((self.min[0], self.max[1], self.min[2])),
-            # leftmost, topmost, closest
+            # 2: leftmost, topmost, closest
             self.transform((self.min[0], self.max[1], self.max[2])),
-            # rightmost, topmost, closest
+            # 3: rightmost, topmost, closest
             self.transform(self.max),
             # lower cap: cw order in a right-hand system
-            # leftmost, bottommost, farthest
+            # 4: leftmost, bottommost, farthest
             self.transform(self.min),
-            # rightmost, bottommost, farthest
+            # 5: rightmost, bottommost, farthest
             self.transform((self.max[0], self.min[1], self.min[2])),
-            # rightmost, bottommost, closest
+            # 6: rightmost, bottommost, closest
             self.transform((self.max[0], self.min[1], self.max[2])),
-            # leftmost, bottommost, closest
+            # 7: leftmost, bottommost, closest
             self.transform((self.min[0], self.min[1], self.max[2])),
         ]
 
@@ -95,6 +83,7 @@ class OBB:
         # TODO : this operation could be vectorized with tensordot
         p_primes = asarray([obb.rotation.dot(p) for p in points])
         obb.min = npmin(p_primes, axis=0)
+        # print("obb p_primes",p_primes)
         obb.max = npmax(p_primes, axis=0)
 
         return obb
@@ -158,3 +147,181 @@ class OBB:
         assert points.shape[1] == 3, 'points have to have 3-elements'
         # no need to store the covariance matrix
         return OBB.build_from_covariance_matrix(cov(points, y=None, rowvar=0, bias=1), points)
+
+
+    ####################
+    # New obb functions
+    ####################
+    @classmethod
+    def distance_3d(cls, pt1, pt2):
+       return math.sqrt((pt1[0]-pt2[0])**2 + (pt1[1]-pt2[1])**2 + (pt1[2]-pt2[2])**2)
+
+    # ARD: Not working 
+    @classmethod
+    def obbvolume(cls, bpnts):
+      d = []
+      # topmost, farthest
+      d.append(OBB.distance_3d(bpnts[0], bpnts[1]))
+      # topmost, closest
+      d.append(OBB.distance_3d(bpnts[2], bpnts[3]))
+      # topmost, leftmost
+      d.append(OBB.distance_3d(bpnts[1], bpnts[2]))
+      # topmost, rightmost
+      d.append(OBB.distance_3d(bpnts[0], bpnts[3]))
+      assert  abs(d[0]-d[1])/d[1] < 0.05 , 'not same distances'
+      assert  abs(d[2]-d[3])/d[3] < 0.05 , 'not same distances'
+      # bottommost, farthest
+      d.append(OBB.distance_3d(bpnts[0], bpnts[1]))
+      # bottommost, closest
+      d.append(OBB.distance_3d(bpnts[2], bpnts[3]))
+      # bottommost, leftmost
+      d.append(OBB.distance_3d(bpnts[1], bpnts[2]))
+      # bottommost, rightmost
+      d.append(OBB.distance_3d(bpnts[0], bpnts[3]))
+      assert  abs(d[4]-d[5])/d[5] < 0.05 , 'not same distances'
+      assert  abs(d[6]-d[7])/d[7] < 0.05 , 'not same distances'
+      # side, rightmost, farthest
+      d.append(OBB.distance_3d(bpnts[0], bpnts[5]))
+      # side, rightmost, closest
+      d.append(OBB.distance_3d(bpnts[3], bpnts[6]))
+      # side, leftmost, farthest
+      d.append(OBB.distance_3d(bpnts[1], bpnts[5]))
+      # side, leftmost, clostest
+      d.append(OBB.distance_3d(bpnts[2], bpnts[7]))
+      assert  abs(d[4]-d[5])/d[5] < 0.05 , 'not same distances'
+      assert  abs(d[6]-d[7])/d[7] < 0.05 , 'not same distances'
+      print("distances: ", d)
+  
+      vol = d[0] * d[4] * d[8]
+      return vol
+  
+    @classmethod
+    def obb_volume(cls, bb):
+      # bb = self.cluster['obb'] 
+      if bb is None:
+        print("no bounding box ")
+        return None
+      try:
+        hull = ConvexHull(bb.points)
+      except:
+        return None
+      return hull.volume
+
+    @classmethod
+    def obb_overlap(cls, bb, bb2):
+      from scipy.spatial import ConvexHull
+      # bb = self.cluster['obb'] 
+      # bb2 = pc_cluster.cluster['obb']
+      if bb == None or bb2 == None:
+        print("no bounding box ")
+        return None
+      try:
+        v1 = OBB.obb_volume(bb)
+        # v1b = OBB.obbvolume(bb)
+        v2 = OBB.obb_volume(bb2)
+        # v2b = OBB.obbvolume(bb2)
+        combined_pnts = bb.points+bb2.points
+        hull = ConvexHull(combined_pnts)
+        v3 = hull.volume
+      except:
+        # See above for failed examples of better QhullError handling...
+        return 0
+      if v1 == None or v2 == None:
+        return 0
+      # take min in case v1 >>> v2 or v2 >>> v1
+      # overlp = max(v1,v2) / hull.volume
+      overlp = min(v1,v2) / hull.volume
+      # print("obb vols:", v1,v1b, v2, v2b, v3, overlp, len(hull.vertices))
+      # print("obb vols:", v1,v2, v3, overlp, len(hull.vertices))
+      return overlp
+
+    @classmethod
+    def in_obb(cls, bb, pt):
+      def pyramid_vol(bb,v0,v1,v2,v3,pt):
+        hull = ConvexHull([bb.points[v0], bb.points[v1], bb.points[v2], bb.points[v3], pt])
+        return hull.volume
+
+#      # bug: Max, Min need to be transformed first.
+#      # do simple quick check first
+#      min = bb.min
+#      max = bb.max
+#      if (pt[0] <= min[0] or pt[1] <= min[1] or pt[2] <= min[2]
+#       or pt[0] >= max[0] or pt[1] >= max[1] or pt[2] >= max[2]):
+#        print("Point outside OBB")
+#        print("min", min)
+#        print("max", max)
+#        print("pt ", pt)
+#        return False
+
+      obb_vol = OBB.obb_volume(bb)
+      obb_pts = bb.points
+
+      try:
+        # volume of each side + point
+# 2: leftmost, topmost, closest
+        # topmost:    vertices 0123
+        vol_top = pyramid_vol(bb,0,1,2,3,pt)
+        # bottommost: vertices 4567
+        vol_bot = pyramid_vol(bb,4,5,6,7,pt)
+        # leftmost:   vertices 1247
+        vol_left = pyramid_vol(bb,1,2,4,7,pt)
+        # rightmost:  vertices 0356
+        vol_right = pyramid_vol(bb,0,3,5,6,pt)
+        # farthest:   vertices 0145
+        vol_far = pyramid_vol(bb,0,1,4,5,pt)
+        # closest:    vertices 2367
+        vol_close = pyramid_vol(bb,2,3,6,7,pt)
+      # except scipy.spatial.qhull.QhullError as e:
+      except:
+        # on boundary(?)
+        errstr = sys.exc_info()[1]
+        print(errstr[:100])
+        return True, None
+        # if (sys.exc_info()[0] != "<class 'scipy.spatial.qhull.QhullError'>"):
+        # if (sys.exc_info()[0] != 'scipy.spatial.qhull.QhullError'):
+        # if sys.exc_info()[1][:len('QH6154')] != 'QH6154':
+        # errstr = sys.exc_info()[1]
+        # if errstr[12:len('QH6154')+12] != 'QH6154':
+          # print("QhullError error:", sys.exc_info()[0])
+          # print("len errstr: ",len(errstr))
+          # print("errstr1: ",errstr[1:len('QH6154')+1])
+          # print("errstr2: ",errstr[2:len('QH6154')+2])
+          # print("errstr3: ",errstr)
+          # print(sys.exc_info()[1][:len('QH6154')])
+          # print("Full QhullError error:", sys.exc_info())
+      tot_vol = vol_top + vol_bot + vol_left + vol_right + vol_far + vol_close
+      # APPROX0 = 0.0001
+      APPROX0 = 0.000000001
+      # if abs((tot_vol - obb_vol)/obb_vol) > APPROX0:
+      # ARD BUG: multiple clusters are assigned to same grip????
+      if (tot_vol / obb_vol) > 1.1:
+        # if point is inside OBB, the volumes should be equal
+        # print("vol dif:", abs(tot_vol - obb_vol), tot_vol, obb_vol, (tot_vol / obb_vol))
+        return False, (tot_vol / obb_vol) 
+      else:
+        # if (vol_top <= APPROX0 or vol_bot <= APPROX0 or vol_left <= APPROX0 or vol_right <= APPROX0 or vol_far <= APPROX0 or vol_close <= APPROX0):
+          # print("Point on side of OBB")
+        # print("vols:", vol_top, vol_bot, vol_left, vol_right, vol_far, vol_close)
+        # print("vol difs:", abs(tot_vol - obb_vol), tot_vol, obb_vol)
+        return True, (tot_vol / obb_vol)
+
+
+#      pt1 = bb.points
+#      # pnts = array(pt, dtype=float) + pt1
+#      pnts = pt1
+#      # print("pnts:", pnts)
+#      bb2 = OBB.build_from_points(pnts)
+#      pt2 = bb2.points
+#      print("pt1 =", pt1)
+#      print("pt2 =", pt2)
+#      count = 0
+#      for i in range(8):
+#        if pt1[i][0] == pt2[i][0] and pt1[i][1] == pt2[i][1] and pt1[i][2] == pt2[i][2]:
+#          count += 1
+#      if count == 8:
+#        print("in bounding box")
+#        return True
+#      print("Not in bounding box")
+#      return False
+
+

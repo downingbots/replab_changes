@@ -76,7 +76,8 @@ def main():
             if args.method == 'pickpush':
               # higher resolution pointcloud with 1-1 mapping to rgb array
               # with different filtering 
-              pc = executor.get_pc_rgb()
+              # pc = executor.get_pc_rgb()
+              pc = executor.get_pc()
               executor.publish_pc()
             else:	
               pc = executor.get_pc()
@@ -130,7 +131,7 @@ def main():
                 executor.widowx.open_gripper()
                 continue
 
-            print("confidences", confidences)
+            # print("confidences", confidences)
             selected = np.random.choice(np.argsort(confidences)[-5:])
             grasp = grasps[kept_indices[selected]][0]
 

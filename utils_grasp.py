@@ -126,6 +126,14 @@ def rgb_depth_map_from_pc(pc, rgb_pc, fill=True, init_blank=False):
               c2 += 1
             else:
               c += 1
+      else: # no fill, for Keypoints on a single cluster
+        for x in range(RGB_WIDTH):
+          for y in range(RGB_HEIGHT):
+            if pc_map[x,y] != -1:
+              pc_img.append(rgb_pc[pc_map[x,y]])
+            else:
+              pc_img.append(0)    # black background
+
       # print("pc_map: ",c2, " nomap ",c)
       return rgb, depth, pc_map, pc_img
 
@@ -246,6 +254,7 @@ def from_2d_pixel_to_3d_point(points, pc_3d):
         p_x_j = []
         p_y_j = []
         dummy_v = pc_3d[0]
+        # print("dummy_v", dummy_v)
         for i in range(len(points)):
           min_dist.append(IMG_WIDTH * IMG_HEIGHT)
           min_v.append(dummy_v)
@@ -273,8 +282,10 @@ def from_2d_pixel_to_3d_point(points, pc_3d):
             for j in range(len(points)):
               pt = points[j].pt
               if RGB_DEPTH_FROM_PC:
-                x = pt[0] * (abs(ul[0]) + abs(br[0])) / RGB_WIDTH
-                y = pt[1] * (abs(ul[1]) + abs(br[1])) / RGB_HEIGHT
+                # x = pt[0] * (abs(ul[0]) + abs(br[0])) / RGB_WIDTH
+                # y = pt[1] * (abs(ul[1]) + abs(br[1])) / RGB_HEIGHT
+                x = pt[0]
+                y = pt[1]
               else:
                 x = pt[0] + margins[0] 
                 y = pt[1] + margins[1]
@@ -282,6 +293,7 @@ def from_2d_pixel_to_3d_point(points, pc_3d):
               if min_dist[j] > dist:
                 min_dist[j] = dist
                 min_v[j] = v
+                # print("dist,v:", dist, v, pt, p_x, p_y, x, y)
                 p_x_j[j] = p_x
                 p_y_j[j] = p_y
         for j,kp in enumerate(points):

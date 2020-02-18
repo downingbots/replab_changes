@@ -30,7 +30,7 @@ class ClusterState:
 
     def create_cluster(self, id = None, status = None, centroid = None, 
                shape = None, shape_attr = None, obb = None, obb_attr = None,
-               kp = None, kp_attr = None,
+               kp = None, kp_attr = None, full_kp_c_pc_map = None,
                num_locations = None, location = None, 
                num_grasps = None, grasps = None, grasp_attr = None,
                interaction = None, interaction_attr = None,
@@ -46,8 +46,11 @@ class ClusterState:
       self.cluster['shape_attr'] = shape_attr      # ["name",value] pair
                                                    # bounding box
                                               # shape_type: cyl, box, sphere...
-      self.cluster['kp'] = kp                      # list of keypoints
+      # 'kp' is the kp derived from a single world cluster
+      self.cluster['kp'] = kp                      # Keypoint class
       self.cluster['kp_attr'] = []                 # mean, stddev for distances 
+      # kp_c_pc_mapping is for mapping the full-pc keypoint to a pc cluster
+      self.cluster['kp_c_pc_mapping'] = full_kp_c_pc_map
       if num_locations == None:
         self.cluster['num_locations'] = 0            
         self.cluster['location'] = []              # a history of locations
@@ -155,14 +158,31 @@ class ClusterState:
       pc_cluster_shape = self.cluster['shape']
       # points = [[p[0], p[1], p[2]] for p in pc_cluster.shape]
       points = [[p[0], p[1], p[2]] for p in pc_cluster_shape]
+      min = [BIGNUM, BIGNUM, BIGNUM]
+      max = [-BIGNUM, -BIGNUM, -BIGNUM]
+      for p in pc_cluster_shape:
+        for i in range(3):
+          if min[i] > p[i]:
+            min[i] = p[i]
+          if max[i] < p[i]:
+            max[i] = p[i]
       # cluster_obb = OBB()
       # obb = cluster_obb.build_from_points(points)
-      # print("POINTS",points)
+      print(self.cluster['id']," cluster numpts:",len(pc_cluster_shape))
       obb = OBB.build_from_points(points)
+      # print("c min  :",min)
+      # print("c max  :",max)
+      print("obbTmin:",obb.get_min)
+      print("obbTmax:",obb.get_max)
+      # print("obb min:",obb.min)
+      # print("obb max:",obb.max)
+      # print("POINTS",points)
+      # print("obb cnt",obb.centroid)
 
       # print("number of cluster points: ",len(pc_cluster_shape), " centroid ", obb.centroid())
       # print("num cluster pnts: ",len(pc_cluster_shape), " min/max ", obb.min, obb.max)
       self.cluster['obb'] = obb
+      # print("obb:", obb.get_min, obb.get_max)
       # obb return values:
       #   obb.centroid()
       #   obb.rotation    # u,v,w=> [0],[1],[2] transform matrix
@@ -171,67 +191,44 @@ class ClusterState:
 
     # ARD TODO: use self.clusters[c_id]
     def in_bounding_box(self, point):
-      from scipy.spatial import ConvexHull
+      # from scipy.spatial import ConvexHull
 
       bb = self.cluster['obb'] 
       if bb is None:
         print("no bounding box ")
         return None
       # print("bounding box :",bb.points)
-      # print("bounding box :",bb.points)
       # print("bounding box2 :",bb.points3d)
+      return OBB.in_obb(bb, point)
 
-      hull = ConvexHull(bb.points)
-
-#      tolerance=1e-12
-#      return all(
-#              (np.dot(eq[:-1], point) + eq[-1] <= tolerance)
-#              for eq in hull.equations)
-
-# [ point_in_hull(point, hull) for point in cloud ]
-# [True, True, True]
-      new_pts = bb.points + array(point)
-      new_hull = ConvexHull(new_pts)
-      if hull == new_hull: 
-          print("Found bounding box")
-          return True
-      else:
-          return False
-
-#      bb = self.clusters[c_id]['bounding_box'] 
-#      if bb is None:
-#        print("no bounding box for ",c_id)
-#        return None
-#      print("bounding box for ",c_id,":",bb)
-#      min_x = None
-#      min_y = None
-#      min_z = None
-#      max_x = None
-#      max_y = None
-#      max_z = None
-#      for i in range(3):
-#        x,y,z = bb[i]
-#        if min_x is None or min_x > x:
-#          min_x = x
-#        if min_y is None or min_y > y:
-#          min_y = y
-#        if min_z is None or min_z > z:
-#          min_z = z
-#        if max_x is None or max_x > x:
-#          max_x = x
-#        if max_y is None or max_y > y:
-#          max_y = y
-#        if max_z is None or max_z > z:
-#          max_z = z
+#      hull = ConvexHull(bb.points)
+#      # print("convex hull volume", hull.volume)
 #
-#      if (point[0] <= max_x and point[0] >= min_x
-#        and point[1] <= max_y and point[1] >= min_y
-#        and point[2] <= max_z and point[2] >= min_z):
-#         print("inside bounding box for ",c_id)
-#         return True
-#      print("outside bounding box for ",c_id)
-#      return False
-# python collect_data.py --method 'pickpush' 
+##      tolerance=1e-12
+##      return all(
+##              (np.dot(eq[:-1], point) + eq[-1] <= tolerance)
+##              for eq in hull.equations)
+#
+## [ point_in_hull(point, hull) for point in cloud ]
+## [True, True, True]
+#      # new_pts = bb.points + array(point)
+#      # point should not be in the hull vertices
+#      new_pts = array(point) + bb.points 
+#      # print("new_pts:",new_pts)
+#      new_hull = ConvexHull(new_pts)
+#      # print("old hull: ", hull.vertices)      # if in obb: 1-8
+#      # print("new hull: ", new_hull.vertices)  # 0-7
+#      if len(hull.vertices) != len(new_hull.vertices):
+#        print("Not in bounding box 1: ", len(hull.vertices),len(new_hull.vertices))
+#        return False
+#      for v in new_hull.vertices:
+#        # if new_pts[v] not in bb.points:
+#        for i in range(8):
+#          if new_pts[v][0]!=bb.points[i][0] or new_pts[v][1]!=bb.points[i][1]:
+#            print("Not in bounding box 2: ", new_pts[new_hull.vertices[v]])
+#            return False
+#      print("in bounding box")
+#      return True
 
     #####################
     # LATEST PC UTILITIES
@@ -302,15 +299,15 @@ class ClusterState:
       # LOCATON DEPENDENT PROBABILITY
       # centroid changes when moved
       # yet, stddev still can be computed?
-      cent_mean, cent_stddev = self.get_mean_stddev(c_id,'boundingbox_attr',"CENTROID_STATS") 
-      cent_val = pc_cluster['boundingbox'].centroid
+      cent_mean, cent_stddev = self.get_mean_stddev(c_id,'obb_attr',"CENTROID_STATS") 
+      cent_val = pc_cluster['obb'].centroid
       # if unmoved, computed mean and variance centroid 
       for c_v in zip(c1, c2):
         cent_prob = scipy.stats.norm(cent_mean, cent_stddev).pdf(c_v)
       # rotation changes when moved
       # if unmoved, computed mean and stddev centroid 
-      rot_mean, rot_stddev = self.get_mean_stddev(c_id,'boundingbox_attr',"ROTATION_STATS") 
-      rot_val = pc_cluster['boundingbox'].rotation
+      rot_mean, rot_stddev = self.get_mean_stddev(c_id,'obb_attr',"ROTATION_STATS") 
+      rot_val = pc_cluster['obb'].rotation
       for r_v in zip(rot_val):
         rot_prob = scipy.stats.norm(rot_mean, rot_stddev).pdf(r_v)
       loc_dep_prob = 1
@@ -321,13 +318,13 @@ class ClusterState:
       # max & min changes over time, but max-min typically doesn't
       # 1 stdev -> 68%; 2 stdev -> 95%; 3 stdev -> 99.7%
       # pdf = probability distribution function
-      c1min = self.clusters[c_id]['boundingbox'].min
-      c2min = pc_cluster['boundingbox'].min
-      c1max = self.clusters[c_id]['boundingbox'].max
-      c2max = pc_cluster['boundingbox'].max
+      c1min = self.clusters[c_id]['obb'].min
+      c2min = pc_cluster['obb'].min
+      c1max = self.clusters[c_id]['obb'].max
+      c2max = pc_cluster['obb'].max
       #
-      min_mean, min_stddev = self.get_mean_stddev(c_id,'boundingbox_attr',"MIN_DIF_STATS") 
-      max_mean, min_mean= self.get_mean_stddev(c_id,'boundingbox_attr',"MAX_DIF_STATS") 
+      min_mean, min_stddev = self.get_mean_stddev(c_id,'obb_attr',"MIN_DIF_STATS") 
+      max_mean, min_mean= self.get_mean_stddev(c_id,'obb_attr',"MAX_DIF_STATS") 
       for c1Xmax, c2Xmax in zip(c1max, c2max):
         for c1Xmin, c2Xmin in zip(c1min, c2min):
           # x, y, z
@@ -345,44 +342,6 @@ class ClusterState:
     # associate grasp with the cluster
     def compare_location(self, c_id, pc_cluster):
       pass
-
-    # for integration into world cluster
-    # def compare_keypoints(self, c_id, pc_cluster):
-    def compare_keypoints(self, pc_cluster, KPs):
-      KPList = pc_cluster.cluster['kp'].get_kp()
-      print("KPList",KPList)
-      for kp_i, KP in enumerate(KPList):
-        # KP.get_kp()
-        # KP.get_descriptor()
-        # return list_cluster[0],score2
-
-        cluster_match, score = self.clusters[c_id]['kp'].compare_kp(pc_cluster)
-        # just use ratios
-        # kp_mean, kp_stddev = self.get_mean_stddev(c_id,'kp_attr',"KP_STATS") 
-        # bb_min_prob = scipy.stats.norm(min_mean, min_stddev).pdf(kp_distance)
-        #
-        # ratio test as per Lowe's paper
-        # for i,(m,n) in enumerate(flann_matches):
-          # ratio[i] = m.distance / n.distance
-        #
-        # for i,(m,n) in enumerate(bf_matches):
-          # ratio[i] = m.distance / n.distance
-        #
-      # for i,(m,n) in enumerate(bf_matches):
-        # if m.distance < 0.7*n.distance:
-      # for i,(m,n) in enumerate(flann_matches):
-        # if m.distance < 0.7*n.distance:
-      # set_attr(self, c_id, field, key_value):
-      #
-      rot_mean, rot_stddev = self.get_mean_stddev(c_id,'boundingbox_attr',"ROTATION_STATS")
-      rot_val = pc_cluster['boundingbox'].rotation
-      for r_v in zip(rot_val):
-        rot_prob = scipy.stats.norm(rot_mean, rot_stddev).pdf(r_v)
-      loc_dep_prob = 1
-      for i in range(3):
-        loc_dep_prob = min(loc_dep_prob, rot_prob[i], cent_prob[i])
-      # ARD: rotation???
-      return kp_prob 
 
     def compare_shapes(self, c_id, pc_cluster):
       # use bounding boxes instead
@@ -517,28 +476,6 @@ class ClusterState:
 #     compare and combine clusters
 #     Future: handle rotation, flipping, rolling
 #
-
-    def compare_keypoints2(self, pc_c, KP):
-      kp_prob = []
-      for i in range(self.num_clusters):
-        kp_prob.append(None)
-     
-      for i, c in enumerate(self.clusters):
-        # get pointcloud associated with designated cluster
-        cluster_pc = c['shape']
-        # Generate 2d image from 3d pointcloud
-        rgb_pc = cluster_pc
-        print(cluster_pc[0])
-        cluster_img,depth,pc_map, pc_img = rgb_depth_map_from_pc(cluster_pc, rgb_pc, fill=False)
-        # return rgb, depth, pc_map, pc_img
-
-        # Compute and detect KPs from 2d image of single world cluster
-        cluster_kp = Keypoints(cluster_img)
-        c['kp'] = cluster_kp
-
-        # compare cluster's KPs to full set of KPs from latest image 
-        matching_pc_cluster, score = cluster_kp.compare_kp(pc_c, KP)
-
 
 #     Map new KPs to new clusters
 #     Map new clusters to world clusters

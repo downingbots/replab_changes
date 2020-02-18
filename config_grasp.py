@@ -38,7 +38,10 @@ PC_GRASPS_TOPIC      = '/pc_grasps'
 PC_KP_TOPIC          = '/pc_kp'
 PC_CLUSTER_TOPIC     = '/pc_clusters'
 
-CLUSTER_MIN_SZ    = 20
+# CLUSTER_MIN_SZ    = 8
+CLUSTER_MIN_SZ      = 15
+# CLUSTER_MIN_SZ    = 20
+# CLUSTER_MIN_SZ    = 30
 # CLUSTER_EPS       = 1  # computed, in thousands...
 # CLUSTER_EPS_DELTA = 1
 

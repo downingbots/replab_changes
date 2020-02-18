@@ -21,7 +21,9 @@ class Keypoints:
       if DISPLAY_IMG_KEYPOINT:
         self.kp_publisher = rospy.Publisher(IMG_KEYPOINT_TOPIC, Image, queue_size=1)
       self.keypoints = []
+      self.pc_map = None
       self.pc_header = None
+      self.kp_pc_points = None
       orb = cv.ORB_create()         # Initiate SIFT detector
       # orb = cv.ORB(1000,1.2)         # Initiate SIFT detector
       # find the keypoints and descriptors with SIFT or ORB
@@ -31,16 +33,16 @@ class Keypoints:
       else:
         cropped_img = self.crop_img(img)
 
+      # print("len(cropped_img):", len(cropped_img)) # always 136?
       self.keypoints, self.descriptor = orb.detectAndCompute(cropped_img,None)
 
       self.bridge = CvBridge()
 
-      top = KP_IMG_CROP_DIM[0]
-      top_margin = KP_IMG_MARGIN_DIM[0]
-      bottom_margin = KP_IMG_MARGIN_DIM[1]
-
       if not RGB_DEPTH_FROM_PC:
         # transform camera to 3d mapping
+        top = KP_IMG_CROP_DIM[0]
+        top_margin = KP_IMG_MARGIN_DIM[0]
+        bottom_margin = KP_IMG_MARGIN_DIM[1]
         for kp in self.keypoints:
           x,y = kp.pt
           # print("pt:",pt)
@@ -50,14 +52,13 @@ class Keypoints:
           if x < kp_left_margin or x > kp_right_margin or y < top[0]:
             self.keypoints.remove(kp)
       if DISPLAY_IMG_KEYPOINT:
-          print("num keypoints: ",len(self.keypoints))
-          self.publish_img(img)
+        # print("num keypoints: ",len(self.keypoints))
+        self.publish_img(img)
       if DISPLAY_PC_KEYPOINT:
-          self.header = None
-          self.pc_kp_pub = rospy.Publisher(PC_KP_TOPIC, PointCloud2, queue_size=1)
-          self.pc_subscriber = rospy.Subscriber(
-                                 POINTCLOUD_TOPIC, PointCloud2, self.update_pc)
-
+        self.header = None
+        self.pc_kp_pub = rospy.Publisher(PC_KP_TOPIC, PointCloud2, queue_size=1)
+        self.pc_subscriber = rospy.Subscriber(
+                               POINTCLOUD_TOPIC, PointCloud2, self.update_pc)
 
     # descriptor match implementations:
     # https://github.com/opencv/opencv/blob/master/modules/features2d/src/matchers.cpp
@@ -69,14 +70,8 @@ class Keypoints:
         print("ARD: TODO map_to_clusters")
         # look through clusters for matching points
 
-    def deep_copy_kp(self, KP, kp_i):
+    def deep_copy_kp(self, KP, kp_list):
       # ARD TODO
-      # copy the list of keypoints
-      # normalize the keypoints
-      # keypoints are based upon the pixel values; transform to x/y/z
-
-      # does len(des) == len(kp)
-
       # deep copy descriptors?  Not sure this is correct
       n = 0
       des = KP.get_descriptors()
@@ -93,16 +88,18 @@ class Keypoints:
       for i in range(0,len(s)):
         new_desc[i]=int(s[i])
 
+      # https://stackoverflow.com/questions/23561236/deep-copy-of-an-opencv2-orb-data-structure-in-python
       # Get descriptors from second y image using the detected points
       # from the x image
       # f, d = orb.compute(im_y, f)
       # direct deep copy of pixel feature locations
       f = KP.get_features()
-      centroid = self.cluster['centroid']
-      return [cv2.KeyPoint(x = (k.pt[0]-centroid.x), y = (k.pt[1]-centroid.y),
+      # centroid = self.cluster['centroid']
+      # return [cv2.KeyPoint(x = (k.pt[0]-centroid.x), y = (k.pt[1]-centroid.y),
+      return [cv2.KeyPoint(x = k.pt[0], y = k.pt[1],
             _size = k.size, _angle = k.angle,
             _response = k.response, _octave = k.octave,
-            _class_id = k.class_id) for k in f], new_desc
+            _class_id = k.class_id) for k in f if k in kp_list], new_desc
 
 
     def get_kp(self):
@@ -119,7 +116,10 @@ class Keypoints:
     # Maps 3d x/y to 2d x/y and compare to keypoints 2d x/y
     # http://docs.ros.org/kinetic/api/librealsense2/html/opencv__pointcloud__viewer_8py_source.html
     def kp_to_3d_point(self, pc_3d):
-      return from_2d_pixel_to_3d_point(self.keypoints, pc_3d)
+      # only compute once per Keypoint object
+      if self.kp_pc_points == None:
+        self.kp_pc_points = from_2d_pixel_to_3d_point(self.keypoints, pc_3d)
+      return self.kp_pc_points
 
     def update_pc(self, data):
       self.pc_header = data.header
@@ -143,8 +143,12 @@ class Keypoints:
 
     def publish_img(self, img):
       # cropped_img = self.crop_img(img)
-      cropped_img = self.crop_img(img)
-      cropped_img = cv.drawKeypoints(cropped_img,self.keypoints,None,color=(0,255,0), flags=0)
+      #cropped_img = self.crop_img(img)
+      cropped_img = img  # should already be cropped
+      img2 = cv2.merge([img, img, img])
+      # img2 = cv.drawKeypoints(cropped_img,self.keypoints,outImage=img2,color=(0,255,0), flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
+      # imgmsg = self.bridge.cv2_to_imgmsg(img2)
+      cropped_img = cv.drawKeypoints(cropped_img,self.keypoints,outImage=None,color=(0,255,0), flags=0)
       imgmsg = self.bridge.cv2_to_imgmsg(cropped_img)
       if DISPLAY_IMG_KEYPOINT:
         self.kp_publisher.publish(imgmsg)
@@ -176,18 +180,111 @@ class Keypoints:
 #     Future: handle rotation, flipping, rolling
 # 
 
-    def compare_kp(self,pc_clusters,KP2):
+    def compare_kp(self,pc_clusters,KP2,kp_c_pc_mapping):
       # from matplotlib import pyplot as plt
 
       # find the keypoints and descriptors with ORB
-      kp1 = self.get_kp()
-      des1 = self.get_descriptor()
-      kp2 = KP2.get_kp()
-      des2 = KP2.get_descriptor()
+      kp1 = self.get_kp()            # world kp
+      des1 = self.get_descriptor()   # world kp desc
+      kp2 = KP2.get_kp()             # pc kp
+      des2 = KP2.get_descriptor()    # pc kp desc
+      # create BFMatcher object
+      bf = cv.BFMatcher(cv.NORM_HAMMING, crossCheck=True)
+      # Match descriptors.
+      bf_matches = bf.match(des1,des2)
+      print("bf_matches",len(bf_matches), len(kp1), len(kp2))
+
+
+      # Initialize lists
+      list_kp1 = []
+      list_kp2 = []
+      list_score = []
+      list_ratio = []
+      list_cluster = []
+      score = 0
+      score2 = 0
+      # https://stackoverflow.com/questions/31690265/matching-features-with-orb-python-opencv
+      # This test rejects poor matches by computing the ratio between the 
+      # best and second-best match. If the ratio is below some threshold,
+      # the match is discarded as being low-quality.
+      # Sort them in the order of their distance. Lower distances are better.
+      pc_clust = []
+      distance = []
+      prob     = []
+      pts      = []
+      pc_3dpt  = []
+      bf_matches = sorted(bf_matches, key = lambda x:x.distance)
+      for i,m in enumerate(bf_matches):
+        if i < len(bf_matches) - 1:
+          ratio = bf_matches[i].distance/bf_matches[i+1].distance
+        else:
+          ratio = None
+        print("bf_match distance", m.distance, ratio)
+        # if i < len(matches) - 1 and m.distance < 0.75 * matches[i+1].distance:
+        # if ratio <= .75:
+        if True:  # return best match based on distance
+          # good.append([kp1])
+          # for BF (in cv2.DMatch objects):
+          # queryIdx - row of the kp1 interest point matrix that matches
+          # trainIdx - row of the kp2 interest point matrix that matches
+          # Get the matching keypoints for each of the images
+          img1_idx = m.queryIdx
+          img2_idx = m.trainIdx
+          # x - columns
+          # y - rows
+          # (x1,y1) = kp1[img1_idx].pt
+          # (x2,y2) = kp2[img2_idx].pt
+          print("kp1/kp2:",kp1[img1_idx], kp2[img2_idx])
+          # print("bf_match: good distance")
+          for pc_k_idx,pc_c,pc_pt,obb in kp_c_pc_mapping:
+            if pc_k_idx == img2_idx:
+              pc_clust.append(pc_c)
+              prob.append(ratio)
+              distance.append(m.distance)
+              pts.append(kp2[img2_idx])
+              pc_3dpt.append(pc_pt)
+              print("bf_match: matching kp")
+              # return top 3 results
+              if i >= len(bf_matches) - 1 or i == 3:
+                return pc_c, distance, prob, kp2[img2_idx], pc_3dpt
+      return None, 0, 0, None, None
+
+#          # Append to each list
+#          # list_kp1.append((x1, y1))
+#          # list_kp2.append((x2, y2))
+#          # list_ratio.append(ratio)
+#          # list_ratio.append(m.distance / n.distance)
+#          found = False
+#          found_c = None
+#          for i,c in enumerate(pc_clusters):
+#
+#            # ARD bug: shape is 3d, (x,y) in 2d
+#            # mapping computed during analyze_pc()
+#
+#
+#            if (x2,y2) in c.shape:
+#              # list_cluster.append(c)
+#              if found_c == None or found_c == c:
+#                found_c = c
+#                print("matching pc cluster found",i)
+#                found = True
+#                return found_c, ratio, (x2,y2)
+#              else:
+#                print("different matching pc cluster found",i)
+#              break
+#          if not found:
+#              print("matching pc cluster not found")
+#              # list_cluster.append(None)
+#      return None, 0, None
+#      # we may be able to figure out rotations of world objects
+
+      ############################
+      # Discarded code
+      ############################
       # if des1.empty() or des2.empty():
       #   print("empty descriptor for keypoint")
       #   return None, 0
-      # des1.convertTo(des1, CV_32F); 
+      # des1.convertTo(des1, CV_32F);
       # des2.convertTo(des2, CV_32F);
 
       ## FLANN parameters
@@ -199,78 +296,31 @@ class Keypoints:
 
       # kp1, des1 = orb.detectAndCompute(img1,None)
       # kp2, des2 = orb.detectAndCompute(img2,None)
-      # create BFMatcher object
-      bf = cv.BFMatcher(cv.NORM_HAMMING, crossCheck=True)
-      # Match descriptors.
-      bf_matches = bf.match(des1,des2)
-      print("bf_matches",bf_matches, len(kp1), len(kp2))
+
+
       # bf_matches = bf.knnMatch(des1,des2, k=2)
       # for i,(m,n) in enumerate(bf_matches):
       #   bf_ratio = m.distance / n.distance:
-
-      # Initialize lists
-      list_kp1 = []
-      list_kp2 = []
-      list_score = []
-      list_ratio = []
-      list_cluster = []
-      score = 0
-      score2 = 0
-      for i,m in enumerate(bf_matches):
-        if m.distance < 0.70:
+      # if m.distance < 0.70:
       # for i,(m,n) in enumerate(bf_matches):
       #   if m.distance < 0.75*n.distance:
       #   for i,(m,n) in enumerate(matches):
-        #   if m.distance < 0.70*n.distance:
-          # good.append([kp1])
-          # for BF (in cv2.DMatch objects):
-          # queryIdx - row of the kp1 interest point matrix that matches
-          # trainIdx - row of the kp2 interest point matrix that matches
-          # Get the matching keypoints for each of the images
-          img1_idx = m.queryIdx
-          img2_idx = m.trainIdx
-          # x - columns
-          # y - rows
-          (x1,y1) = kp1[img1_idx].pt
-          (x2,y2) = kp2[img2_idx].pt
-          # Append to each list
-          list_kp1.append((x1, y1))
-          list_kp2.append((x2, y2))
-          list_ratio.append(m.distance / n.distance)
-          found = False
-          found_c = None
-          for i,c in enumerate(pc_clusters):
-            if (x2,y2) in c.shape:
-              list_cluster.append(c)
-              if found_c == None:
-                found_c = c
-                print("matching pc cluster found",i)
-                found = True
-              elif found_c == c:
-                print("matching pc cluster found",i)
-                found = True
-              else:
-                print("different matching pc cluster found",i)
-              break
-          if not found:
-              print("matching pc cluster not found")
-              list_cluster.append(None)
-          # we may be able to figure out rotations of world objects
-
-      score = 0
-      score2 = 0
-      for i in range(len(list_kp1)):
+      #     if m.distance < 0.70*n.distance:
+      ##  score = 0
+      # score2 = 0
+      # for i in range(len(list_kp1)):
           # score += m.distance
           # score2 += m.distance / n.distance
-          score2 += list_ratio[i]
+          # score2 += list_ratio[i]
+          # score += list_ratio[i]
       # score = (100-(score / len(bf_matches)))
       # score2 = score2 / len(bf_matches)
-      if len(list_kp1) > 0:
-        score2 = score2 / len(list_kp1)
-      else:
-        return None, 0
-      print("RESULT: Signature match with score = {}".format(score2))
-      return list_cluster[0],score2
+      # if len(list_kp1) > 0:
+        # score2 = score2 / len(list_kp1)
+      # else:
+        # return None, 0
+      # print("RESULT: Signature match with score = {}".format(score2))
+      # return list_cluster[0],score2
       
       # Sort them in the order of their distance.
       # matches = sorted(bf_matches, key = lambda x:x.distance)
