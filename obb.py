@@ -258,7 +258,7 @@ class OBB:
 
       try:
         # volume of each side + point
-# 2: leftmost, topmost, closest
+        # 2: leftmost, topmost, closest
         # topmost:    vertices 0123
         vol_top = pyramid_vol(bb,0,1,2,3,pt)
         # bottommost: vertices 4567

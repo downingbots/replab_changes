@@ -36,7 +36,8 @@ class WorldState:
       self.num_clusters = 0
       self.clusters = []
       self.clusters_history = []
-      self.KP = None
+      self.kp_info = []
+      self.KP = None  
       # self.obb_pub = rospy.Publisher('/obb', Marker, queue_size=1)
       self.obb_pub = rospy.Publisher('/obb', MarkerArray, queue_size=1)
 
@@ -130,14 +131,15 @@ class WorldState:
         return
 
     # integrates temporary "pc cluster" into persistent "world" cluster
-    def integrate_current_pc_into_world(self, pc_clusters, KPs):
+    def integrate_current_pc_into_world(self, pc_clusters, pc_kp_info):
       if self.world_state == 'UNINITIALIZED' or len(self.clusters) == 0:
-        self.KP.compare_all_keypoints(KPs)
+        self.compare_all_keypoints(pc_clusters)
         print("copy over pc clusters")
         # just store the pc_clusters 
         self.clusters_history.append(self.clusters)
         self.clusters = pc_clusters
-        self.KP = KPs
+        self.kp_info_history.append(self.pc_kp_info)
+        self.kp_info = pc_kp_info
         self.save_world()
         self.world_state = 'ANALYZE PLAYGROUND' 
         return
@@ -161,7 +163,10 @@ class WorldState:
       ##############
       # Compare KPs
       # Returns an array indexed by w_c_id to find matching pc_c_ids
-      kp_matching_pc_clusters, kp_distance, kp_scores, kp_xy, kp_3dpt = self.compare_keypoints(pc_clusters, KPs)
+      KPs = pc_clusters.KP
+      kp_matching_pc_clusters, kp_distance, kp_pts = self.compare_keypoints(KPs)
+      self.kp_info = [kp_matching_pc_clusters, kp_distance, kp_pts]
+
       ##############
 
       # Do compare of current PC to each cluster
@@ -217,11 +222,10 @@ class WorldState:
         obb_ovrlp       = obb_max_pct_ovlp[w_c_id]
         obb_ovrlp_num   = obb_ovlp_cnt[w_c_id]
         kp_match        = kp_matching_pc_clusters[w_c_id]
-        kp_score        = kp_scores[w_c_id]
         print(w_c_id,"c/obb/kp matches:", cent_match, obb_match, kp_match)
         print("c  : ", cent_match, cent_dist, cent_clust_dist)
         print("obb: ", obb_match, obb_ovrlp, obb_ovrlp_num)
-        print("kp : ", kp_match, kp_score)
+        print("kp : ", kp_match)
         if cent_match in pc_unmatched:
           pc_unmatched.remove(cent_match)
         if obb_match in pc_unmatched:
@@ -251,7 +255,8 @@ class WorldState:
                print("w", w_c_id, " not matched ")
           else:
             kps = self.clusters[w_c_id].cluster['kp'].get_kp()
-            print("w", w_c_id, " matched kp but moved to ", kp_xy[w_d_id], " from ", kps)
+            print("w", w_c_id, " matched kp and moved ")
+            # print("w", w_c_id, " matched kp but moved to ", kp_xy[w_d_id], " from ", kps)
 
       if len(pc_unmatched) > 0:
         print("unmatched PC clusters: ", pc_unmatched)
@@ -584,7 +589,7 @@ class WorldState:
       # min_sample_size = min_sample_sz
       min_sample_sz = CLUSTER_MIN_SZ
       # for i in range(CLUSTER_MIN_SZ - 8):
-      for i in range(1):
+      for i in range(5):
         # clust_eps = CLUSTER_EPS
         min_sample_size = min_sample_sz - i
         # for j in range(10):
@@ -632,25 +637,30 @@ class WorldState:
                   running_sum[c_id] += pc[i]
                   # print(c_id, "shape append", pc[i])
                   self.clusters[c_id].cluster['shape'].append(pc[i])
-                  if KP != None:
-                    # map 3d keypoints to cluster 
-                    for k, kp_3d_pnt in enumerate(kp_3d):
-                      # print("kp_3d_pnt:", kp_3d_pnt)
-                      # if int(pc[i][0]*1000000) == int(kp_3d_pnt[0]*1000000):
-                      #   print("pc kp: ", pc[i], kp_3d_pnt)
-                      obb = None
-                      if c.in_bounding_box(point)[0] == kp_3d_pnt[0]:
-                        obb = c.cluster['obb']
-                        kp_list[c_id].append([k, c_id, pc[i]])
-                        print("kp found in cluster obb", k, c_id, pc[i])
-                      if pc[i][0] == kp_3d_pnt[0] and pc[i][1] == kp_3d_pnt[1] and pc[i][2] == kp_3d_pnt[2]:
-                      
-                        kp_list[c_id].append([k, c_id, pc[i], obb])
-                        print("kp found in cluster", k, c_id, pc[i])
-                      else:
-                        kp_list[c_id].append([k, None, pc[i], obb])
-      # self.clusters[c].cluster['kp'] = self.deep_copy_kp(KP, kp_list)
       for c_id, c in enumerate(self.clusters):
+        # compute bounding box
+        c.compute_bounding_box()
+        if KP != None:
+          # map 3d keypoints to cluster 
+          for k, kp_3d_pnt in enumerate(kp_3d):
+            # print("kp_3d_pnt:", kp_3d_pnt)
+            # if int(pc[i][0]*1000000) == int(kp_3d_pnt[0]*1000000):
+            #   print("pc kp: ", pc[i], kp_3d_pnt)
+            obb = None
+            ret = self.clusters[c_id].in_bounding_box(kp_3d_pnt)
+            if ret == True:
+              obb = self.clusters[c_id].cluster['obb']
+              kp_list[c_id].append([k, c_id, pc[i]])
+              # ('setting an array element with a sequence.',)
+              print("kp found in cluster obb", k, c_id)
+              shape = self.clusters[c_id].cluster['shape']
+              for pt in shape:
+                if pt[0] == kp_3d_pnt[0] and pt[1] == kp_3d_pnt[1] and pt[2] == kp_3d_pnt[2]:
+                  kp_list[c_id].append([k, c_id, pt, obb])
+                  # ('setting an array element with a sequence.',)
+                  print("kp found in cluster", k, c_id, pt[0],pt[1],pt[2])
+                else:
+                  kp_list[c_id].append([k, None, pt, obb])
 	c.cluster['kp_c_pc_mapping'] = kp_list[c_id]   # kp_3dpt, pc_c_id, pc[i]
         center = running_sum[c_id] / counter[c_id]
         c.cluster['center'] = center
@@ -659,8 +669,6 @@ class WorldState:
         c.normalize()
         # need to normalize KP:
         print("cluster ",c_id," len", len(c.cluster['shape']))
-        # compute bounding box
-        c.compute_bounding_box()
         # print("cluster", c_id, " obb min,max,rot is ", c.cluster['obb'].min, c.cluster['obb'].max, c.cluster['obb'].rotation)
         # print("cluster", c_id, " centroid is ", c.cluster['obb'].centroid)
         # print(c_id, " cluster shape:", self.clusters[i].cluster['shape'])
@@ -1095,9 +1103,7 @@ class WorldState:
     def get_action_mode(self):
       pass
 
-
     ###################
-
 
 
 #
@@ -1118,42 +1124,33 @@ class WorldState:
 #     Segment filtered 3d image into clusters
 #     Ensure KPs are in 3d image
 #
+
+#     For full world KPs, compare to current full pc KPs
+#     Fine matching KP infos, and compute distance moved
+    def compare_all_keypoints(self, pc_clusters):
+      self.kp_w_pc_info_match = compare_w_pc_kp(self, self.kp_pc_info, pc_clusters.kp_info)
+
 #     For each world cluster, generate cluster 2d image
 #     Compute and detect KPs for each cluster 2d image
 #     Compare full set of new KPs to each world cluster KPs
 #     Map new KPs to new clusters
 #     Map new clusters to world clusters
-#     compare and combine clusters
-#     Future: handle rotation, flipping, rolling
-#
-    def compare_all_keypoints(self, pc_c, KP):
-      for kp in KP.get_kp():
-      for i in range(self.num_clusters):
-          a, b, c, d, e = c.cluster['kp'].compare_kp(pc_c, KP, kp_c_pc_mapping)
-          matching_pc_cluster[i] = a
-          distance[i] = b
-          score[i] = c
-          pc_kp_xy[i] = d
-          pc_kp_3dpt[i] = e
-
-      
-      pc_kp
-
-    def compare_keypoints(self, pc_c, KP):
+#     Future: handle rotation, flipping, rolling, compare and combine clusters
+    def compare_keypoints(self, KP):
       pc_kp_prob = []
       # print("KP:",KP.get_kp())
      
-      matching_pc_cluster = []
-      score = []
-      distance = []
-      pc_kp_xy = []
-      pc_kp_3dpt = []
+      pc_kp_matching_cluster = []
+      pc_kp_distance = []
+      # pc_kp_xy = []
+      # pc_kp_3dpt = []
+      pc_kp_obb = []
+      pc_kp_pts = []
       for w_c_id, c in enumerate(self.clusters):
-        matching_pc_cluster.append(None)
-        distance.append(None)
-        score.append(None)
-        pc_kp_xy.append(None)
-        pc_kp_3dpt.append(None)
+        pc_kp_matching_cluster.append(None)
+        pc_kp_distance.append(None)
+        pc_kp_pts.append(None)
+        # pc_kp_obb.append(None)
       for i, c in enumerate(self.clusters):
         # get pointcloud associated with designated cluster
         cluster_pc = c.cluster['shape']
@@ -1175,15 +1172,15 @@ class WorldState:
         # compare cluster's KPs to full set of KPs from latest image 
         # matching_pc_cluster[i], score[i], pc_kp_xy[i], pc_kp_3dpt[i]  = c.cluster['kp'].compare_kp(pc_c, KP, kp_c_pc_mapping)
         if c.cluster['kp'] != None:
-          a, b, c, d, e = c.cluster['kp'].compare_kp(pc_c, KP, kp_c_pc_mapping)
-          matching_pc_cluster[i] = a
-          distance[i] = b
-          score[i] = c
-          pc_kp_xy[i] = d
-          pc_kp_3dpt[i] = e
-        if matching_pc_cluster[i] != None or score[i] > 0:
-          print("w",i, "matching keypoint pc",matching_pc_cluster[i]," distance ", distance[i], " score ", score[i])
-      return matching_pc_cluster, distance, score, pc_kp_xy, pc_kp_3dpt
+          a1, b1, c1 = c.cluster['kp'].compare_cluster_kp(KP, kp_c_pc_mapping)
+          pc_kp_matching_cluster[i] = a1
+          pc_kp_distance[i] = b1
+          pc_kp_pts[i] = c1
+          # pc_kp_obb[i] = d1
+        if pc_kp_matching_cluster[i] != None and len(pc_kp_matching_cluster[i]) > 0:
+          print("w",i, "matching keypoint pc",pc_kp_matching_cluster[i]," distance ", pc_kp_distance[i])
+      return pc_kp_matching_cluster, pc_kp_pts, pc_kp_distance 
+      # return pc_kp_matching_cluster, pc_kp_distance, pc_kp_score, pc_kp_xy, pc_kp_3dpt, pc_kp_obb
 
 
 #     Map new KPs to new clusters

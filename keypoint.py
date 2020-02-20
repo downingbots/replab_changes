@@ -180,74 +180,98 @@ class Keypoints:
 #     Future: handle rotation, flipping, rolling
 # 
 
-    def compare_kp(self,pc_clusters,KP2,kp_c_pc_mapping):
+    def compare_kp(self,KP2):
       # from matplotlib import pyplot as plt
 
       # find the keypoints and descriptors with ORB
-      kp1 = self.get_kp()            # world kp
-      des1 = self.get_descriptor()   # world kp desc
-      kp2 = KP2.get_kp()             # pc kp
-      des2 = KP2.get_descriptor()    # pc kp desc
+      kp1 = self.get_kp()            
+      des1 = self.get_descriptor()   
+      kp2 = KP2.get_kp()             
+      des2 = KP2.get_descriptor()    
       # create BFMatcher object
       bf = cv.BFMatcher(cv.NORM_HAMMING, crossCheck=True)
       # Match descriptors.
       bf_matches = bf.match(des1,des2)
+      bf_matches = sorted(bf_matches, key = lambda x:x.distance)
       print("bf_matches",len(bf_matches), len(kp1), len(kp2))
 
-
       # Initialize lists
-      list_kp1 = []
-      list_kp2 = []
-      list_score = []
-      list_ratio = []
-      list_cluster = []
-      score = 0
-      score2 = 0
+      pc_kp_info = []
       # https://stackoverflow.com/questions/31690265/matching-features-with-orb-python-opencv
       # This test rejects poor matches by computing the ratio between the 
       # best and second-best match. If the ratio is below some threshold,
       # the match is discarded as being low-quality.
       # Sort them in the order of their distance. Lower distances are better.
-      pc_clust = []
-      distance = []
-      prob     = []
-      pts      = []
-      pc_3dpt  = []
-      bf_matches = sorted(bf_matches, key = lambda x:x.distance)
       for i,m in enumerate(bf_matches):
-        if i < len(bf_matches) - 1:
-          ratio = bf_matches[i].distance/bf_matches[i+1].distance
-        else:
-          ratio = None
-        print("bf_match distance", m.distance, ratio)
+        print("bf_match distance", m.distance)
+        # good.append([kp1])
+        # Get the matching keypoints for each of the images
+        # queryIdx - row of the kp1 interest point matrix that matches
+        # trainIdx - row of the kp2 interest point matrix that matches
+        img1_idx = m.queryIdx
+        img2_idx = m.trainIdx
+        pc_kp_info.append([kp1[img1_idx], kp2[img2_idx], m.distance])
+      return pc_kp_info
+        # Rejected compare_kp code
+        # if i < len(bf_matches) - 1:
+        #   ratio = bf_matches[i].distance/bf_matches[i+1].distance
+        # else:
+        #   ratio = None
         # if i < len(matches) - 1 and m.distance < 0.75 * matches[i+1].distance:
         # if ratio <= .75:
-        if True:  # return best match based on distance
-          # good.append([kp1])
-          # for BF (in cv2.DMatch objects):
-          # queryIdx - row of the kp1 interest point matrix that matches
-          # trainIdx - row of the kp2 interest point matrix that matches
-          # Get the matching keypoints for each of the images
-          img1_idx = m.queryIdx
-          img2_idx = m.trainIdx
-          # x - columns
-          # y - rows
-          # (x1,y1) = kp1[img1_idx].pt
-          # (x2,y2) = kp2[img2_idx].pt
-          print("kp1/kp2:",kp1[img1_idx], kp2[img2_idx])
-          # print("bf_match: good distance")
-          for pc_k_idx,pc_c,pc_pt,obb in kp_c_pc_mapping:
-            if pc_k_idx == img2_idx:
-              pc_clust.append(pc_c)
-              prob.append(ratio)
-              distance.append(m.distance)
-              pts.append(kp2[img2_idx])
-              pc_3dpt.append(pc_pt)
-              print("bf_match: matching kp")
-              # return top 3 results
-              if i >= len(bf_matches) - 1 or i == 3:
-                return pc_c, distance, prob, kp2[img2_idx], pc_3dpt
-      return None, 0, 0, None, None
+
+    # TODO: move some kp code from world.py and keypoints.py to cluster.py
+    # note: self called from individual pc clusters
+    def compare_cluster_kp(self,pc_KP,kp_c_pc_mapping):
+          pts      = []
+          distance = []
+          pc_clust = []
+          pc_kp_info = self.compare_kp(pc_KP)
+          for [pc_kp,c_kp,dist] in pc_kp_info:
+            for [pc_kp,pc_c,pc_pt,obb] in kp_c_pc_mapping:
+              print("pc_kp/c_kp:", pc_kp, c_kp)
+              if (pc_kp[0] == c_kp[0] and pc_kp[1] == c_kp[1]):
+                pc_clust.append(pc_c)
+                distance.append(dist)
+                pts.append([pc_pt, pc_kp, c_kp])
+                print("bf_match: matching kp")
+                # only need top 3 matches for indiv clusters
+                if len(pc_clust) == 3:   
+                  break
+          return pc_clust, distance, pts
+
+    # note: self called from w clusters, compare with curr full pc clusters 
+    # w is from the previous pc analysis.
+    def compare_w_pc_kp(self, pc_KP, kp_pc_info, kp_w_info):
+          kp_w_pc_info_match = []
+          w_pc_kp_info = self.compare_pc_kp(pc_kp)
+          print("# w,pc,kpmatches", len(self.get_kp()), len(pc_KP.get_kp()), len(w_pc_kp_info))
+          for w_pc_i,[w_kp1,pc_kp1,w_dist1] in enumerate(w_pc_kp_info):
+            pc_clust2, pc_distance2, pc_dist2, pc_pts2 = kp_pc_info
+            pc_pt2, pc_kp2, pc_c_kp2 = pc_pts2
+            w_clust2, w_distance2, w_dist2, w_pts2 = kp_w_info
+            w_pt2, w_kp2, w_pc_kp2 = w_pts2
+
+            # so, w_kp1 == pc_kp1, find matching 3d pts for w_kp2 and pc_kp2
+            # Note: the x/y locations of w_kp1 and pc_kp1 aren't same
+            pc_match = None
+            for pc_j in range(len(pc_clust)):
+              if pc_kp1[0] == pc_kp2[pc_j][0] and pc_kp1[1] == pc_kp2[pc_j][1]:
+                pc_match = pc_j
+            w_match = None
+            for w_k in range(len(w_clust)):
+              if w_kp1[0] == w_kp2[pc_k][0] and w_kp1[1] == w_kp2[w_k][1]:
+                w_match = w_k
+
+            if (pc_match == None or w_match == None):
+              print("w_pc_kp: no match", w_pc_i, w_kp2, pc_kp2)
+              kp_w_pc_info_match.append([w_pc_i, w_kp2, pc_kp2, None])
+            else:
+              # did kp move?
+              dist = distance_3d(w_pt2[w_k], pc_pt2[pc_j])
+              print("w_pc_kp: movement", w_pc_i, dist, w_pt2[w_k], pc_pt2[pc_j])
+              kp_w_pc_info_match.append([w_pc_i, w_kp2, pc_kp2, dist])
+          return kp_w_pc_info_match
 
 #          # Append to each list
 #          # list_kp1.append((x1, y1))

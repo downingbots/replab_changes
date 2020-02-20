@@ -196,7 +196,8 @@ class ClusterState:
       bb = self.cluster['obb'] 
       if bb is None:
         print("no bounding box ")
-        return None
+        # return None
+        return False
       # print("bounding box :",bb.points)
       # print("bounding box2 :",bb.points3d)
       return OBB.in_obb(bb, point)
