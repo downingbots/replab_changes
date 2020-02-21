@@ -37,7 +37,9 @@ class WorldState:
       self.clusters = []
       self.clusters_history = []
       self.kp_info = []
+      self.kp_info_history = []
       self.KP = None  
+      self.KP_history = []
       # self.obb_pub = rospy.Publisher('/obb', Marker, queue_size=1)
       self.obb_pub = rospy.Publisher('/obb', MarkerArray, queue_size=1)
 
@@ -122,25 +124,21 @@ class WorldState:
         self.num_clusters += 1
       self.world.append(cluster)
 
-    def replace_world_clusters(self, pc_clusters):
+    def copy_curr_pc_to_world_state(self, pc_clusters):
         print("copy over pc clusters")
-        # just store the pc_clusters
+        # just store the pc_clusters 
+        self.clusters_history.append(self.clusters)
         self.clusters = pc_clusters.clusters
+        self.KP_history.append(self.KP)
+        self.KP = pc_clusters.KP
+        self.kp_info_history.append(self.kp_info)
+        self.kp_info = pc_clusters.kp_info
         self.save_world()
-        self.world_state = 'ANALYZE PLAYGROUND'
-        return
 
     # integrates temporary "pc cluster" into persistent "world" cluster
     def integrate_current_pc_into_world(self, pc_clusters, pc_kp_info):
       if self.world_state == 'UNINITIALIZED' or len(self.clusters) == 0:
-        self.compare_all_keypoints(pc_clusters)
-        print("copy over pc clusters")
-        # just store the pc_clusters 
-        self.clusters_history.append(self.clusters)
-        self.clusters = pc_clusters
-        self.kp_info_history.append(self.pc_kp_info)
-        self.kp_info = pc_kp_info
-        self.save_world()
+        self.copy_curr_pc_to_world_state(pc_clusters)
         self.world_state = 'ANALYZE PLAYGROUND' 
         return
       # compare PC to world clusters
@@ -156,8 +154,10 @@ class WorldState:
       centroid_matching_clusters = [None for w_c_id, w_c in enumerate(self.clusters)]
       centroid_min_dist = [BIGNUM for w_c_id, w_c in enumerate(self.clusters)]
       centroid_min_clust_dist = [BIGNUM for w_c_id, w_c in enumerate(self.clusters)]
-      obb_matching_clusters = [None for i, w_c in enumerate(self.clusters)]
-      obb_max_pct_ovlp = [0 for i, w_c in enumerate(self.clusters)]
+      obb_max_matching_clusters = [None for i, w_c in enumerate(self.clusters)]
+      obb_min_matching_clusters = [None for i, w_c in enumerate(self.clusters)]
+      obb_max_max_pct_ovlp = [0 for i, w_c in enumerate(self.clusters)]
+      obb_max_min_pct_ovlp = [0 for i, w_c in enumerate(self.clusters)]
       obb_ovlp_cnt = [0 for i, w_c in enumerate(self.clusters)]
 
       ##############
@@ -165,8 +165,27 @@ class WorldState:
       # Returns an array indexed by w_c_id to find matching pc_c_ids
       KPs = pc_clusters.KP
       kp_matching_pc_clusters, kp_distance, kp_pts = self.compare_keypoints(KPs)
-      self.kp_info = [kp_matching_pc_clusters, kp_distance, kp_pts]
+      pc_clusters.kp_info = [kp_matching_pc_clusters, kp_distance, kp_pts]
+      for i in range(len(kp_matching_pc_clusters)):
+        print("kp_m, kp_dist, kp_pts len", len(kp_matching_pc_clusters), len(kp_distance), len(kp_pts))
+        print("Cluster kp compare:", i, kp_matching_pc_clusters[i], kp_distance[i])
+        if i <= len(kp_pts) and len(kp_pts[i]) == 3:
+          [pc_pt, pc_kp, c_kp] = kp_pts[i]
+          print("Cluster kp compare:", i, kp_matching_pc_clusters[i], kp_distance[i], pc_pt, pc_kp, c_kp)
 
+      if self.KP != None:
+        self.kp_w_pc_info_match = self.compare_all_keypoints(pc_clusters)
+        if self.kp_w_pc_info_match != None:
+          for kp_cid,kp_w_pc_info in enumerate(self.kp_w_pc_info_match):
+            if len(kp_w_pc_info) == 6:
+              [w_kp1, pc_kp1, w_dist1, kp_dist, kp_w, kp_pc] = kp_w_pc_info
+              print("kp_w_pc_info_match:", w_kp1, pc_kp1, w_dist1, kp_cid, kp_dist, kp_w, kp_pc) 
+            else:
+              print("kp_w_pc_info_match :", kp_w_pc_info)
+        else:
+          print("compare_all_keypoints failed")
+      else:
+        print("first pc analysis does not compare all keypoints")
       ##############
 
       # Do compare of current PC to each cluster
@@ -188,16 +207,19 @@ class WorldState:
           ##############
           if clust_dist <= 0: 
             # bb_prob, loc_indep_prob = self.compare_bounding_box(w_c_id, pc_c)
-            obb_pct_ovlp = self.compare_bounding_box(w_c_id, pc_c)
+            max_obb_pct_ovlp, min_obb_pct_ovlp = self.compare_bounding_box(w_c_id, pc_c)
 
-            if obb_max_pct_ovlp[w_c_id] < obb_pct_ovlp:
-              obb_matching_clusters[w_c_id] = i
-              obb_max_pct_ovlp[w_c_id] = obb_pct_ovlp
+            if obb_max_max_pct_ovlp[w_c_id] < max_obb_pct_ovlp:
+              obb_max_matching_clusters[w_c_id] = i
+              obb_max_max_pct_ovlp[w_c_id] = max_obb_pct_ovlp
+
+            if obb_max_min_pct_ovlp[w_c_id] < min_obb_pct_ovlp:
+              obb_min_matching_clusters[w_c_id] = i
+              obb_max_min_pct_ovlp[w_c_id] = min_obb_pct_ovlp
 
             # indicator that we should combine clusters
-            if obb_pct_ovlp > .70:
+            if max_obb_pct_ovlp > .70 or min_obb_pct_ovlp > .70:
               obb_ovlp_cnt[w_c_id] += 1
-
 
           ##############
           # shape_prob = self.compare_shapes(w_c_id, pc_c)
@@ -218,18 +240,22 @@ class WorldState:
         cent_match      = centroid_matching_clusters[w_c_id]
         cent_dist       = centroid_min_dist[w_c_id]
         cent_clust_dist = centroid_min_clust_dist[w_c_id]
-        obb_match       = obb_matching_clusters[w_c_id]
-        obb_ovrlp       = obb_max_pct_ovlp[w_c_id]
+        obb_max_match   = obb_max_matching_clusters[w_c_id]
+        obb_min_match   = obb_min_matching_clusters[w_c_id]
+        obb_max_ovrlp   = obb_max_max_pct_ovlp[w_c_id]
+        obb_min_ovrlp   = obb_max_min_pct_ovlp[w_c_id]
         obb_ovrlp_num   = obb_ovlp_cnt[w_c_id]
         kp_match        = kp_matching_pc_clusters[w_c_id]
-        print(w_c_id,"c/obb/kp matches:", cent_match, obb_match, kp_match)
+        print(w_c_id,"c/obb/kp matches:", cent_match, obb_max_match, obb_min_match, kp_match)
         print("c  : ", cent_match, cent_dist, cent_clust_dist)
-        print("obb: ", obb_match, obb_ovrlp, obb_ovrlp_num)
+        print("obb: ", obb_max_match, obb_max_ovrlp, obb_min_match, obb_min_ovrlp, obb_ovrlp_num)
         print("kp : ", kp_match)
         if cent_match in pc_unmatched:
           pc_unmatched.remove(cent_match)
-        if obb_match in pc_unmatched:
-          pc_unmatched.remove(obb_match)
+        if obb_max_match in pc_unmatched:
+          pc_unmatched.remove(obb_max_match)
+        if obb_min_match in pc_unmatched:
+          pc_unmatched.remove(obb_min_match)
         if kp_match in pc_unmatched:
           pc_unmatched.remove(kp_match)
       
@@ -237,8 +263,8 @@ class WorldState:
           if cent_clust_dist > 0:
             print("w", w_c_id, " matched and moved slightly")
           elif cent_clust_dist < 0:
-            if cent_match == obb_match:
-              if obb_ovrlp > .70:
+            if cent_match == obb_max_match and obb_max_match == obb_min_match:
+              if obb_max_ovrlp > .70 or obb_min_ovrlp > .70:
                 print("w", w_c_id, " matched and unmoved and overlap. Combine clusters.")
                 # ARD: TODO
                 # combined_cluster = self.combine_clusters(self.clusters[w_cid], pc_clusters[cent_match])
@@ -246,7 +272,7 @@ class WorldState:
                 print("w", w_c_id, " matched and possibly rotated. Transform to combine clusters.")
         else:
           if kp_match == None:
-            if cent_clust_dist < 0 and cent_match == obb_match and obb_ovrlp > .95:
+            if cent_clust_dist < 0 and cent_match == obb_max_match and obb_max_ovrlp > .95:
               print("w", w_c_id, " matched and unmoved and overlap by position and obb. Combine clusters.")
               # ARD: TODO
               # combined_cluster = self.combine_clusters(self.clusters[w_c_id], pc_clusters[cent_match])
@@ -330,7 +356,9 @@ class WorldState:
         print(" ")
         print("Low volume w_id that maybe should be ignored: ", low_w_vol)
       # ARD: for debugging, compare consecutive 2 clusters as moving window
-      self.replace_world_clusters(pc_clusters)
+      self.copy_curr_pc_to_world_state(pc_clusters)
+
+################ END integration
         # ARD TODO:
         # was there a split of a w cluster?
         # were there 2+ unmatched pc clusters? 
@@ -643,22 +671,22 @@ class WorldState:
         if KP != None:
           # map 3d keypoints to cluster 
           for k, kp_3d_pnt in enumerate(kp_3d):
-            # print("kp_3d_pnt:", kp_3d_pnt)
             # if int(pc[i][0]*1000000) == int(kp_3d_pnt[0]*1000000):
             #   print("pc kp: ", pc[i], kp_3d_pnt)
             obb = None
-            ret = self.clusters[c_id].in_bounding_box(kp_3d_pnt)
+            # kp_3d_pt is an array; convert to list to avoid:
+            # ('setting an array element with a sequence.',)
+            pt_lst = [kp_3d_pnt[0], kp_3d_pnt[1], kp_3d_pnt[2]]
+            ret = self.clusters[c_id].in_bounding_box(pt_lst)
             if ret == True:
               obb = self.clusters[c_id].cluster['obb']
               kp_list[c_id].append([k, c_id, pc[i]])
-              # ('setting an array element with a sequence.',)
               print("kp found in cluster obb", k, c_id)
               shape = self.clusters[c_id].cluster['shape']
               for pt in shape:
                 if pt[0] == kp_3d_pnt[0] and pt[1] == kp_3d_pnt[1] and pt[2] == kp_3d_pnt[2]:
                   kp_list[c_id].append([k, c_id, pt, obb])
-                  # ('setting an array element with a sequence.',)
-                  print("kp found in cluster", k, c_id, pt[0],pt[1],pt[2])
+                  print("kp found in cluster", k, c_id, pt)
                 else:
                   kp_list[c_id].append([k, None, pt, obb])
 	c.cluster['kp_c_pc_mapping'] = kp_list[c_id]   # kp_3dpt, pc_c_id, pc[i]
@@ -743,9 +771,9 @@ class WorldState:
     #########################################
 
     def get_pct_overlap(self, obb1, obb2):
-        pct_overlap = OBB.obb_overlap(obb1, obb2)
+        max_pct_overlap, min_pct_overlap = OBB.obb_overlap(obb1, obb2)
         # print("pct ovrlap:", pct_overlap)
-        return pct_overlap
+        return max_pct_overlap, min_pct_overlap
 
     def compare_bounding_box(self, w_c_id, pc_cluster):
       # LOCATON DEPENDENT PROBABILITY
@@ -762,10 +790,10 @@ class WorldState:
           print("no OBB for w", w_c_id)
         return 0,0
       # percent overlap
-      pct_ovrlp = self.get_pct_overlap( self.clusters[w_c_id].cluster['obb'],pc_cluster.cluster['obb'])
-      if pct_ovrlp > 0.90:
-        print("obb overlap: world",w_c_id, pc_cluster.cluster['id'], pct_ovrlp)
-      return pct_ovrlp
+      max_pct_ovrlp, min_pct_ovrlp = self.get_pct_overlap( self.clusters[w_c_id].cluster['obb'],pc_cluster.cluster['obb'])
+      if max_pct_ovrlp > 0.90:
+        print("obb overlap: world",w_c_id, pc_cluster.cluster['id'], min_pct_ovrlp, max_pct_ovrlp)
+      return max_pct_ovrlp, min_pct_ovrlp 
 
 #      #    if obb match including orientation, return % match
 #      #    if obb cluster not there:
@@ -923,7 +951,7 @@ class WorldState:
           if ret[0] == True:
             print("grasp in cluster",c_id)
             return True
-        print("grasp not in cluster")
+        # print("grasp not in cluster")
         return False
 
 
@@ -1128,7 +1156,8 @@ class WorldState:
 #     For full world KPs, compare to current full pc KPs
 #     Fine matching KP infos, and compute distance moved
     def compare_all_keypoints(self, pc_clusters):
-      self.kp_w_pc_info_match = compare_w_pc_kp(self, self.kp_pc_info, pc_clusters.kp_info)
+
+      return self.KP.compare_w_pc_kp(pc_clusters.KP, pc_clusters.kp_info, self.kp_info)
 
 #     For each world cluster, generate cluster 2d image
 #     Compute and detect KPs for each cluster 2d image

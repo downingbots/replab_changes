@@ -229,11 +229,11 @@ class OBB:
       if v1 == None or v2 == None:
         return 0
       # take min in case v1 >>> v2 or v2 >>> v1
-      # overlp = max(v1,v2) / hull.volume
-      overlp = min(v1,v2) / hull.volume
+      max_overlp = max(v1,v2) / hull.volume
+      min_overlp = min(v1,v2) / hull.volume
       # print("obb vols:", v1,v1b, v2, v2b, v3, overlp, len(hull.vertices))
       # print("obb vols:", v1,v2, v3, overlp, len(hull.vertices))
-      return overlp
+      return max_overlp, min_overlp
 
     @classmethod
     def in_obb(cls, bb, pt):

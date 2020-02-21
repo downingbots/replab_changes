@@ -228,6 +228,7 @@ class Keypoints:
           pc_clust = []
           pc_kp_info = self.compare_kp(pc_KP)
           for [pc_kp,c_kp,dist] in pc_kp_info:
+            # if pc_c is None then the keypoint was not in the cluster shape
             for [pc_kp,pc_c,pc_pt,obb] in kp_c_pc_mapping:
               print("pc_kp/c_kp:", pc_kp, c_kp)
               if (pc_kp[0] == c_kp[0] and pc_kp[1] == c_kp[1]):
@@ -243,34 +244,61 @@ class Keypoints:
     # note: self called from w clusters, compare with curr full pc clusters 
     # w is from the previous pc analysis.
     def compare_w_pc_kp(self, pc_KP, kp_pc_info, kp_w_info):
+          if pc_KP == None or len(kp_pc_info) == 0 or len(kp_w_info) == 0:
+            return None
           kp_w_pc_info_match = []
-          w_pc_kp_info = self.compare_pc_kp(pc_kp)
+          w_pc_kp_info = self.compare_kp(pc_KP)
+          if len(w_pc_kp_info) == 0:
+            return None
           print("# w,pc,kpmatches", len(self.get_kp()), len(pc_KP.get_kp()), len(w_pc_kp_info))
           for w_pc_i,[w_kp1,pc_kp1,w_dist1] in enumerate(w_pc_kp_info):
-            pc_clust2, pc_distance2, pc_dist2, pc_pts2 = kp_pc_info
-            pc_pt2, pc_kp2, pc_c_kp2 = pc_pts2
-            w_clust2, w_distance2, w_dist2, w_pts2 = kp_w_info
-            w_pt2, w_kp2, w_pc_kp2 = w_pts2
+            print("w_kp1",w_kp1," matches pc_kp1",pc_kp1," with distance", w_dist1)
+            pc_clust2, pc_dist2, pc_pts2 = kp_pc_info
+            print("w_clust pc_clust distance", w_pc_i, pc_clust2, pc_dist2)
+            # ([pc_pt, pc_kp, c_kp])
+            pc_pt2, pc_w_kp2, pc_pc_kp2 = None, None, None
+            for j in range(len(pc_pts2)):
+              if len(pc_pts2[j]) == 3:
+                # 1 list per kp pt, may be empty
+                pc_pt2, pc_w_kp2, pc_pc_kp2 = pc_pts2[j]
+                print(j, "pc_pts2:",pc_pt2, pc_w_kp2, pc_pc_kp2)
+              # else:   # probably empty [[], [],...,[]]
+              #  print("pc_pts2:",pc_pts2)
+            w_clust2, w_dist2, w_pts2 = kp_w_info
+            w_pt2, w_w_kp2, w_pc_kp2 = None, None, None
+            for j in range(len(w_pts2)):
+              if len(w_pts2[j]) == 3:
+                # 1 list per kp pt, may be empty
+                w_pt2, w_w_kp2, w_pc_kp2 = w_pts2[j]
+                print(j, "w_pts2:",w_pt2, w_w_kp2, w_pc_kp2)
+              # else:   # probably empty [[], [],...,[]]
+              #   print("w_pts2:",w_pts2)
 
             # so, w_kp1 == pc_kp1, find matching 3d pts for w_kp2 and pc_kp2
             # Note: the x/y locations of w_kp1 and pc_kp1 aren't same
             pc_match = None
-            for pc_j in range(len(pc_clust)):
-              if pc_kp1[0] == pc_kp2[pc_j][0] and pc_kp1[1] == pc_kp2[pc_j][1]:
+            for pc_j in range(len(pc_clust2)):
+              if (pc_kp1 != None and pc_pc_kp2 != None 
+                 and pc_kp1[0] == pc_pc_kp2[pc_j][0] 
+                 and pc_pc_kp1 != None and pc_pc_kp2 != None
+                 and pc_pc_kp1[1] == pc_pc_kp2[pc_j][1]):
                 pc_match = pc_j
             w_match = None
-            for w_k in range(len(w_clust)):
-              if w_kp1[0] == w_kp2[pc_k][0] and w_kp1[1] == w_kp2[w_k][1]:
+            for w_k in range(len(w_clust2)):
+              if (w_kp1 != None and w_pc_kp2 != None 
+                 and w_kp1[0] == w_pc_kp2[w_k][0] 
+                 and w_pc_kp1 != None and w_pc_kp2 != None
+                 and w_pc_kp1[1] == w_pc_kp2[w_k][1]):
                 w_match = w_k
 
             if (pc_match == None or w_match == None):
-              print("w_pc_kp: no match", w_pc_i, w_kp2, pc_kp2)
-              kp_w_pc_info_match.append([w_pc_i, w_kp2, pc_kp2, None])
+              print("w_pc_kp: no match", w_pc_i, pc_w_kp2, pc_pc_kp2)
+              kp_w_pc_info_match.append([w_kp1, pc_kp1, w_dist1, w_pc_i, pc_w_kp2, pc_pc_kp2, None])
             else:
               # did kp move?
               dist = distance_3d(w_pt2[w_k], pc_pt2[pc_j])
               print("w_pc_kp: movement", w_pc_i, dist, w_pt2[w_k], pc_pt2[pc_j])
-              kp_w_pc_info_match.append([w_pc_i, w_kp2, pc_kp2, dist])
+              kp_w_pc_info_match.append([w_kp1, pc_kp1, w_dist1, w_pc_i, w_w_kp2, w_pc_kp2, dist])
           return kp_w_pc_info_match
 
 #          # Append to each list
