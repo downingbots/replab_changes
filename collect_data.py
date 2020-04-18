@@ -72,19 +72,16 @@ def main():
             print('\n=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n')
             print('Grasp %d' % sample_id)
 
-            rgbd = executor.get_rgbd()
-            if args.method == 'pickpush':
-              # higher resolution pointcloud with 1-1 mapping to rgb array
-              # with different filtering 
-              # pc = executor.get_pc_rgb()
-              pc = executor.get_pc()
-              executor.publish_pc()
-            else:	
-              pc = executor.get_pc()
+            pc = executor.get_pc()
+            if args.method != 'pickpush':
+              rgbd = executor.get_rgbd()
+            else:
+              # in pickpush, get_pc publishes to the octomap server and
+              # get_octomap_pc returns the parameters to plan_graps
+              octomap, header = executor.get_octomap_pc()
 
-            # if len(pc) == 0:
-            if len(rgbd) == 0 or len(pc) == 0:
-              print("rgbd or pc len 0")
+            if len(pc) == 0:
+              print("pc len 0")
               rospy.sleep(1)
               continue
             executor.sample['filtered_pc'] = pc
@@ -92,17 +89,12 @@ def main():
             try:
                 if args.method == 'combined':
                     policy = choice(policy_array, 1, policy_array_weights)[-1]
-                if args.method == 'pickpush':
-                  rgb = executor.get_rgb()
-                  grasps = policy.plan_grasp(rgb, pc)
-                else:
+                if args.method != 'pickpush':
                   grasps = policy.plan_grasp(rgbd, pc)
+                else:
+                  grasps = policy.plan_grasp(octomap, header)
                 if grasps == None:
                   continue
-                # if args.method == 'pickpush':
-                #   pushes = policy.plan_push(rgbd, pc)
-                #   orig_grasps = grasps
-                #   grasps = grasps.append(pushes)
             except ValueError as ve:
                 traceback.print_exc(ve)
                 print('Error planning, resetting...')
@@ -154,51 +146,6 @@ def main():
                 executor.save_sample(sample_id)
 
             print('Success: %r %f' % (success, err))
-
-#            if success:
-#                # angle = [-1.57, 1.57][np.random.random() > .5]
-#                # executor.widowx.move_to_drop(angle)
-#                if args.method == 'pickpush':
-#                  # if move:
-#                  #   policy.plan_drop()
-#                  # executor.widowx.move_to_drop()
-#                  # executor.widowx.move_to_reset()
-#                  # Currently drop is done in executer.py
-#                  #
-#                  # policy.evaluate_grasp(pc, pc_rgb, grasps, grasp, success, err)
-#                  # todo: figure out if push was selected action and perform instead
-#                  # success, err = executor.execute_push(push)
-#                  selected_action = ["PICKUP", "PUSH"][np.random.random() > .5]
-#                  success, err = executor.execute_grasp(grasp, grasps, confidences,  policy, action = selected_action)
-#
-#                else:
-#                  executor.widowx.move_to_reset()
-#                  executor.widowx.open_gripper(drop=True)
-#            else:
-#                executor.widowx.move_to_reset()
-#                executor.widowx.open_gripper(drop=True)
-
-#            if success:
-#                # angle = [-1.57, 1.57][np.random.random() > .5]
-#                # executor.widowx.move_to_drop(angle)
-#                if args.method == 'pickpush':
-#                  # if move:
-#                  #   policy.plan_drop()
-#                  # executor.widowx.move_to_drop()
-#                  # executor.widowx.move_to_reset()
-#                  # Currently drop is done in executer.py
-#                  #
-#                  # policy.evaluate_grasp(pc, pc_rgb, grasps, grasp, success, err)
-#                else:
-#                  executor.widowx.move_to_reset()
-#                  executor.widowx.open_gripper(drop=True)
-#            else:
-#                executor.widowx.move_to_reset()
-#                executor.widowx.open_gripper(drop=True)
-#
-#            executor.widowx.move_to_neutral()
-#
-#            executor.widowx.open_gripper()
 
             if counter % 500 == 499:
                 executor.widowx.sweep_arena()

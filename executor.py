@@ -55,26 +55,22 @@ class Executor:
         self.transform = lambda x: x
         # For ROS/cv2 conversion
         self.bridge = CvBridge()
-        self.rgb_ready = True
         self.pc_ready = True
         self.pc_count = 0
+        self.octomap_ready = False
+        self.octomap_ready2 = False
 
         # Register subscribers
-        if not RGB_DEPTH_FROM_PC:
-          self.img_subscriber = rospy.Subscriber(
-            RGB_IMAGE_TOPIC, Image, self.update_rgb)
-          self.depth_subscriber = rospy.Subscriber(
-            DEPTH_IMAGE_TOPIC, Image, self.update_depth)
-          self.caminfo_subscriber = rospy.Subscriber(
-            DEPTH_CAMERA_INFO_TOPIC, CameraInfo, self.save_cinfo)
         self.pc_subscriber = rospy.Subscriber(
             POINTCLOUD_TOPIC, PointCloud2, self.update_pc)
+        self.octomap_pc_subscriber = rospy.Subscriber(
+            OCTOMAP_TOPIC, PointCloud2, self.update_octomap)
 
         # Register cluster pub
-        if DISPLAY_PC_RGB:
-          self.pc_rgb_pub1 = rospy.Publisher(PC_RGB_TOPIC, PointCloud2, queue_size=1)
-        if DISPLAY_PC_DEPTH_MAP:
-          self.pc_depth_map_pub2 = rospy.Publisher(PC_DEPTH_MAP_TOPIC, PointCloud2, queue_size=1)
+        # pub transformed pc to octomap server
+        self.pc_rgb_pub1 = rospy.Publisher(PC_RGB_TOPIC, PointCloud2, queue_size=1)
+        self.pc_octomap_pub2 = rospy.Publisher(PC_OCTOMAP_TOPIC, PointCloud2, queue_size=5)
+
         if DISPLAY_PC_GRASPS:
           self.pc_grasps_pub3 = rospy.Publisher(PC_GRASPS_TOPIC, PointCloud2, queue_size=1)
 
@@ -95,25 +91,19 @@ class Executor:
 
         # Store latest RGB-D
 
-        if RGB_DEPTH_FROM_PC:
-          self.rgb = np.zeros((RGB_HEIGHT, RGB_WIDTH, 3))
-          self.depth = np.zeros((RGB_HEIGHT, RGB_WIDTH, 1))
-          self.pc_map = np.full((RGB_HEIGHT, RGB_WIDTH), -1)
-        else:
-          self.rgb = np.zeros((IMG_HEIGHT, IMG_WIDTH, 3))
-          self.depth = np.zeros((IMG_HEIGHT, IMG_WIDTH, 1))
-          self.pc_map = none
-        # ARD: orig:
-        # self.pc = np.zeros((1, 3))
         self.pc = []                   # unmaterialized pc
-        self.pc_img = []                   
-        self.full_pc = []
-        self.full_pc_rgb = []
-        self.transformed_pc = []
         self.transformed_pc_rgb = []   
-        self.base_z = []
+        self.base_z = None
         self.sample = {}
         self.pc_header = None
+        self.octomap_pc = []
+        # p = [0.16999318981759565, 0.14906749041266876, 0.47066674113892565, np.uint32(9465628)]
+        # for x in range(136):
+        #   for y in range(120):
+        #     for z in range(9):
+        #       self.octomap_pc.append(p)
+        # self.octomap_count = 0
+        self.octomap_header = None
 
         self.camera_info = CameraInfo()
         if scan:
@@ -130,18 +120,25 @@ class Executor:
         self.camera = PinholeCameraModel()
         self.camera.fromCameraInfo(self.camera_info)
 
-    # rgb image topic if not RGB_DEPTH_FROM_PC
-    def update_rgb(self, data):
-        if not self.rgb_ready:
-          print("skip update_rgb")
+    def update_octomap(self, data):
+        if not self.octomap_ready:
+          self.octomap_ready2 = False
           return
-        cv_image = self.transform(self.bridge.imgmsg_to_cv2(data))
-        self.rgb = cv_image
-
-    # depth image topic if not RGB_DEPTH_FROM_PC
-    def update_depth(self, data):
-        cv_image = self.transform(self.bridge.imgmsg_to_cv2(data))
-        self.depth = cv_image
+        self.octomap_header = data.header
+        self.octomap = list(pc2.read_points(data, skip_nans=True))
+        self.octomap_ready2 = True
+        
+        # self.octomap = pc2.read_points(data, skip_nans=True)
+        # width = 136  (.34 meters @ .0025)
+        # height = 120 (.3 meters @ .0025)
+        # x = 136
+        # y = 120 
+        # z = 9
+        # width = 4
+        # height = 136 * 120 * 9
+        # self.octomap = pc2.read_points(data, skip_nans=True,  uvs=[[4, height]])
+        # self.octomap_count += 1
+        # print("octo_cnt: ", self.octomap_count, len(self.octomap))
 
     # point cloud topic 
     def update_pc(self, data):
@@ -162,28 +159,6 @@ class Executor:
     def save_cinfo(self, data):
         self.camera_info = data
 
-    def get_rgbd(self):
-        self.get_pc()
-        if RGB_DEPTH_FROM_PC:
-          # depth = np.reshape(self.depth, (RGB_WIDTH, RGB_HEIGHT, 1))
-          # depth = np.reshape(self.depth, (RGB_HEIGHT, RGB_WIDTH, 1))
-          # print("   ", self.depth.shape, self.rgb.shape)
-          # print("   ", len(self.pc_img), len(self.pc_img[0]))
-          return self.pc_img
-          # self.full_pc_rgb = np.concatenate([self.rgb, depth], axis=2)
-          # return self.full_pc_rgb 
-          # return self.rgbd
-        else: # derived from original code
-          # old_depth = self.depth.astype(np.float) / 10000.
-          old_depth = self.depth.astype(np.float) 
-          # ARD
-          # print ("old_depth.shape ")
-          # print (old_depth.shape)    # (480, 640, 1)
-          depth = rectify_depth(old_depth)
-          depth = np.reshape(depth, (IMG_HEIGHT, IMG_WIDTH, 1))
-          self.full_pc_rgb = np.concatenate([self.rgb, depth], axis=2)
-          return self.full_pc_rgb 
-
     def get_pose(self):
         pose = self.widowx.get_current_pose().pose
         pose_list = [pose.position.x,
@@ -195,18 +170,45 @@ class Executor:
                      pose.orientation.z]
         return pose_list
 
-    def get_pc(self):
-        # ARD
-        # while (not self.pc_ready):
-        #   yield
-        # pc = list(self.pc)
-        # if len(self.pc) == 0:
-        #     return 
-        # self.pc_ready = False
-        # pc = list(self.pc)
-        # self.pc_ready = True
+    # not used by pick_push
+    def get_rgbd(self):
+        old_depth = self.depth.astype(np.float)
+        depth = rectify_depth(old_depth)
+        depth = np.reshape(depth, (480, 640, 1))
+        # compute keypoints only before use / call get_rgbd() before get_pc()
+        # self.keypoints = self.find_features_2d(self.rgb)
+        return np.concatenate([self.rgb, depth], axis=2)
 
-        # pc = np.array(self.pc)[:, :3]
+
+    def get_octomap_pc(self):
+        # while self.pc_count != self.octomap_count:
+        #   print(" self.pc_count:", self.pc_count," octomap_count:", self.octomap_count)
+        #   rospy.sleep(1)
+        # filter out tray
+        self.octomap_pc = []
+        while len(self.octomap_pc) == 0:
+          self.octomap_ready = True
+          if self.octomap_ready2:
+            self.octomap_pc = (self.octomap)
+            # self.octomap_pc = list(self.octomap)
+            # self.octomap_pc = [[p[0],p[1],p[2],np.uint32(p[3])] for p in self.octomap]
+            self.octomap_ready = False
+          print("len octomap_pc:",len(self.octomap_pc))
+          if len(self.octomap_pc) > 0:
+            print("octomap[0]:",self.octomap_pc[0])
+          if len(self.octomap_pc) == 0:
+            rospy.sleep(2)
+        # octomap_pc = np.array(self.octomap_pc)[:, :4]
+        print("1 octomap_pc[0]:",self.octomap_pc[0])
+        # self.octomap_pc = self.filter_base(self.octomap_pc)
+        # octomap returns average color, so no need to use color from closest point in transformed pc.
+        self.octomap_pc = add_color(self.octomap_pc, self.transformed_pc_rgb)
+        print("2 octomap_pc[0]:",self.octomap_pc[0])
+        
+        # self.publish_pc(PC_OCTOMAP_TOPIC, self.octomap_pc)
+        return self.octomap_pc, self.octomap_header
+
+    def get_pc(self):
         # materialize pc
         self.pc_ready = False
         pc = list(self.pc)
@@ -216,14 +218,9 @@ class Executor:
           print("No point cloud from camera!")
           return None
         rgb_pc = np.array(pc)[:, :4]
-        np.random.shuffle(rgb_pc)
+        # np.random.shuffle(rgb_pc)
         # print("rgb_pc shape0 ", rgb_pc.shape[0])
         print("rgb_pc shape ", rgb_pc.shape)
-        # if rgb_pc.shape[0] > RGB_PC_DENSITY:
-        # After filtering out Tray, RGb_PC_DENSTITY is not sufficient
-        # if len(rgb_pc) > RGB_PC_DENSITY:
-        #   rgb_pc = rgb_pc[:RGB_PC_DENSITY]
-        #   print("len rgb_pc ", len(rgb_pc))
         pc = np.array(rgb_pc)[:, :3]
 
         def transform_pc(srcpc, tf_matrix):
@@ -235,200 +232,77 @@ class Executor:
         pc = transform_pc(pc, self.cm)
 
         # put rgb back in pc
-        # print("b4 len pc ", len(pc))
         rgb_pc = [[p[0],p[1],p[2],rgb_pc[i][3]] for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS)]
         pc = rgb_pc
-        # pc = [p for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS)]
-        # rgb_pc = [[p[0],p[1],p[2],rgb_pc[i][3]] for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS)]
-        # rgb_pc = [[p[0],p[1],p[2],rgb_pc[i][3]] for i, p in enumerate(pc)]
-        # pc = [p for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS)]
         print("len pc ", len(pc))
-        # if len(pc) > 0:
-          # print("pc[0]: ",pc[0])
-        if RGB_DEPTH_FROM_PC:
-          # get 2d rgb image, with associated depth, and a mapping to full pc
-          self.rgb, self.depth, self.pc_map, self.pc_img = rgb_depth_map_from_pc(pc,rgb_pc)
-          self.full_pc = pc
-          self.sample['full_pc'] = self.full_pc
 
+        # pruning not required with Octomap. Higher res is better.
+        # # do further PC size reduction for kdtree and grip analysis
+        # if len(pc) > PC_DENSITY:
+        #     pc = pc[:PC_DENSITY]
+        # print("pruned pc len:",len(pc))
+
+        pc = np.reshape(pc, (len(pc), 4))
+        self.transformed_pc_rgb = pc
+        self.publish_pc(PC_RGB_TOPIC, self.transformed_pc_rgb)
+        return pc
+
+    def filter_base(self,pc):
         ######################
         # Filter out base tray
         ######################
+        
+        return pc
+
+
+        # z "elbow" to filter base
+        return rm_base(pc)
+
+        plane = segment_cluster(pc)
+        p1 = [p for i,p in enumerate(pc) if not plane[i]]
+        p2 = [p for i,p in enumerate(pc) if plane[i]]
+        print("prefilter pc len:",len(pc), len(plane), len(p1), len(p2))
+        pc2_rgb = p2
+        print("postfilter pc len:",len(pc2_rgb))
+        return pc2_rgb
+
+
+        ######################
+        # z "elbow" to filter base
+        return rm_base(pc)
+
+        ######################
+        # use segmentation to filter base
+        ######################
         print("prefilter pc len:",len(pc))
-        self.base_z = compute_z_sectors(pc)
         # ARD: any (base_z - MIN_OBJ_HEIGHT) greater than .485 is suspect...
         # print(MIN_OBJ_HEIGHT, " sector base_z:", self.base_z)
+
+        plane = segment_cluster(pc)
+        pc2_rgb = []
+        for i, p in enumerate(pc):
+          if not plane[i]:
+             pc2_rgb.append(p)
+        print("postfilter pc len:",len(pc2_rgb))
+        return pc2_rgb
+
+        ######################
+        # use averages to filter base
+        ######################
+        self.base_z = compute_z_sectors(pc, self.base_z)
         pc2_rgb = []
         for i, p in enumerate(pc):
              sect = get_sector(p[0],p[1])
              if (p[2] > self.base_z[sect] - MIN_OBJ_HEIGHT):
-               # if i < 10:
-                 # print("TOO CLOSE TO GROUND ", p[2], self.base_z[sect], MIN_OBJ_HEIGHT)
+               if i < 10:
+                 print("TOO CLOSE TO GROUND ", p[2], self.base_z[sect], MIN_OBJ_HEIGHT)
                continue
-             if (p[2] > 0.485):
-               print("suspect sector: ", sect, self.base_z[sect], p)
+             # if (p[2] > 0.485):
+             #   print("suspect sector: ", sect, self.base_z[sect], p)
              pc2_rgb.append(p)
-        pc = pc2_rgb
-        print("postfilter pc len:",len(pc))
+        print("postfilter pc len:",len(pc2_rgb))
         ######################
-
-        # ARD: TEST
-        # self.transformed_pc_rgb = self.pc_img
-        # self.publish_pc()
-        # print(jojo)
-        # ARD: END TEST
-        # do further PC size reduction for kdtree and grip analysis
-        # if pc.shape[0] > PC_DENSITY:
-        # pc = np.array(self.pc_img)[:, :3]
-        if len(pc) > PC_DENSITY:
-            pc = pc[:PC_DENSITY]
-        print("pruned pc len:",len(pc))
-
-# Moved to plan_grasp
-#        dist, _ = self.kdtree.query(pc, k=1)
-#        # ARD: Huge reduction of points (~5K to ~975 with dups, 670 no dups
-#        # ARD: Better off using get_pc_rgb()?
-#        pc = [p for i, p in enumerate(pc) if dist[i] > .003]
-#        # PC_BOUNDS, HEIGH_BOUNDS now done in rgb_depth_map_from_pc()
-#        # pc = [p for i, p in enumerate(pc) if inside_polygon(
-#        #     p, PC_BOUNDS, HEIGHT_BOUNDS) and dist[i] > .003]
-
-        # pc = np.reshape(pc, (len(pc), 3))
-        pc = np.reshape(pc, (len(pc), 4))
-        self.transformed_pc_rgb = pc
-        # for i, p in enumerate(pc):
-          # print(i,"pc",pc[i])
-        return pc
-
-    # return img
-    def get_rgb(self):
-        return self.rgb
-        # return cv2.UMat(self.rgb)
-        # return cv2.cvtColor(self.rgb, RGB)
-        # import scipy.misc
-        # return scipy.misc.toimage(self.rgb)
-        # from PIL import Image
-        # return Image.fromarray(self.rgb, 'RGB')
-
-    # 2-d image of clusters (i.e., tray filtered out)
-    def get_pc_rgb(self):
-        if RGB_DEPTH_FROM_PC:
-          # self.full_pc_rgb = self.full_pc[:, 3]
-          # self.full_pc_rgb = list(self.pc)
-          # executor.get_rgbd() and get_pc() should have already been called:
-          # -> self.rgb, self.depth, self.pc_map, self.full_pc, self.full_pc_rgb
-          #    are filled already in
-          # print("pc[0] :",self.full_pc_rgb[0])
-          # self.full_pc_rgb = np.array(self.full_pc_rgb)[:, :4]
-          # print("fpc ",len(self.full_pc))
-          # print("fpc2",self.full_pc[0].shape)
-          # self.full_pc_rgb = np.array(self.full_pc)[:, :4]
-          print("pc_img ",len(self.pc_img))    # 16320 == (120x136)
-          pc = self.pc_img
-        else:
-          ###################
-          # ARD: No longer used
-          #vvvvvvvvvvvvvvvvvv
-          # while (not self.pc_ready):
-          #   yield
-          prev_pc_cnt = -1
-          # different light structures get different results
-          while not self.pc_ready or prev_pc_cnt == self.pc_count:
-            print("not ready")
-            rospy.sleep(.1)
-          prev_pc_cnt = self.pc_count
-          self.pc_ready = False
-          self.full_pc = list(self.pc)
-          self.pc_ready = True
-          prev_pc_len = len(self.full_pc) 
-          # print("pc len: ", len(self.full_pc))
-          self.full_pc = np.array(self.full_pc)[:, :4]
-          # "atomically" evaluate generator
-          np.random.shuffle(self.full_pc)
-          if self.full_pc.shape[0] > PC_DENSITY:
-              self.full_pc = self.full_pc[:PC_DENSITY]
-          self.full_pc = np.array(self.full_pc)[:, :4]
-          # self.full_pc_rgb = self.full_pc[:, 3]
-          self.full_pc_rgb = self.full_pc
-          # print("pc_rgb: ", self.full_pc_rgb)
-          self.full_pc = np.array(self.full_pc)[:, :3]
-  
-          def transform_pc(srcpc, tf_matrix):
-              ones = np.ones((srcpc.shape[0], 1))
-              srcpc = np.append(srcpc, ones, axis=1)
-              out = np.dot(tf_matrix, srcpc.T)[:3]
-              return out.T
-  
-          self.full_pc = transform_pc(self.full_pc, self.cm)
-          self.full_pc = np.array(self.full_pc)[:, :3]
-          self.sample['full_pc'] = self.full_pc
-  
-          # Didn't like the plane results of segment cluster 
-          # plus the plane logic removed some of the flat objects.
-          # plane = self.segment_cluster(pc)
-          # pc3 = [p for i, p in enumerate(pc) if dist[i] > .003 and
-          #       (plane is not None and not plane[i])]
-          pc = []
-          if DISPLAY_PC_RGB:
-            pc_rgb = []
-            for i, p in enumerate(self.full_pc):
-              if inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS):
-                pc.append(p)
-                if DISPLAY_PC_RGB:
-                  pc_rgb.append(p)
-            print("len full_pc: ",len(self.full_pc), " vs. inbound ", len(pc_rgb))
-          #vvvvvvvvvvvvvvvvvv
-          # ARD: End No longer used
-          ###################
-
-        ######################
-        # Filter out base tray
-        ######################
-        # prefilter: 16320.  Post-filter: 965, with duplicates
-        self.base_z = compute_z_sectors(pc)
-        pc2 = []
-        if DISPLAY_PC_RGB:
-          pc2_rgb = []
-          for i, p in enumerate(pc):
-             sect = get_sector(p[0],p[1])
-             if (p[2] > self.base_z[sect] - MIN_OBJ_HEIGHT):
-               # if i < 10:
-                 # print("TOO CLOSE TO GROUND ", p[2], self.base_z[sect], MIN_OBJ_HEIGHT)
-               continue
-             pc2.append(p)
-             # pc2_rgb.append(pc_rgb[i])
-             pc2_rgb.append(p)
-        # pc = np.reshape(pc2, (len(pc2), 3))
-        if DISPLAY_PC_RGB:
-          # self.transformed_pc_rgb = np.reshape(pc2_rgb, (len(pc2_rgb), 3))
-          self.transformed_pc_rgb = np.reshape(pc2_rgb, (len(pc2_rgb), 4))
-          # self.transformed_pc = pc
-        # print("pc: ", self.pc)
-        # print("pc_rgb: ", self.pc_rgb)
-        # print("len1 pc inbounds: ",len(self.pc), " pc[0]= ", self.pc[0])
-        # return self.pc, self.pc_rgb
-        # return self.transformed_pc, self.transformed_pc_rgb
-
-        # ARD: Used by plan_grasp()
-        return self.transformed_pc_rgb
-
-    def scan_base(self, scans=100):
-        def haul(pc):
-            try:
-                rgbd = executor.get_rgbd()
-                pc = self.get_pc()
-                print('# of new base points: %d' % len(pc))
-                self.base_pc = np.concatenate([self.base_pc, pc], axis=0)
-                np.save(PC_BASE_PATH, self.base_pc)
-                self.kdtree = KDTree(self.base_pc)
-            except ValueError as ve:
-                traceback.print_exc(ve)
-                print('No pointcloud detected')
-
-        for i in range(scans):
-            print('Scan %d' % i)
-            haul(self.pc)
-            rospy.sleep(1)
+        return pc2_rgb
 
     def execute_grasp(self, grasp, grasps = None, confidences = None, policy = None, manual_label=False):
         try:
@@ -441,14 +315,15 @@ class Executor:
             e_i = 1
             while action in ["GRASP","RETRY_GRASP", "PICKUP","EVAL_WORLD_ACTION", "ROTATE", "FLIP"]:
               prelift_z = min(PRELIFT_HEIGHT, (new_z - GRIPPER_OFFSET - .02))
-              if len(self.base_z) != 0:
-                sect = get_sector(new_x,new_y)
-                lift_z = min(new_z, self.base_z[sect]) - GRIPPER_OFFSET
+              lift_z = new_z - GRIPPER_OFFSET
+              # if self.base_z != None and len(self.base_z) != 0:
+              #   sect = get_sector(new_x,new_y)
+              #   lift_z = min(new_z, self.base_z[sect]) - GRIPPER_OFFSET
                 #    ('lift z', 0.43801, 0.47103, 0.4812742508453974, 0.03302)
 
-                print("lift z", lift_z,new_z, self.base_z[sect],GRIPPER_OFFSET)
-              else:
-                print("WARNING: base_z = 0")
+              #   print("lift z", lift_z,new_z, self.base_z[sect],GRIPPER_OFFSET)
+              # else:
+              #   print("WARNING: base_z = 0")
 
               if (action == "GRASP"):                     
                 # Start from neutral; May choose different grasp/cluster
@@ -710,62 +585,36 @@ class Executor:
         pc2 = point_cloud2.create_cloud(self.pc_header, fields, pc2)
         self.pc_grasps_pub3.publish(pc2)
 
-    def publish_pc(self):
-      # Derived from:
-      # https://gist.github.com/lucasw/ea04dcd65bc944daea07612314d114bb
-      for j in range(2):
-        if j == 0 and not (DISPLAY_PC_DEPTH_MAP and DISPLAY_PC_RGB):
-          continue
-        elif j == 0:
-          # pc = self.transformed_pc
-          # pc = self.transformed_pc_rgb
-          # self.rgb, self.depth
-          print("transformed_pc ",len(self.transformed_pc_rgb))
-          pc_rgb = self.transformed_pc_rgb
-          # self.base_z = compute_z_sectors(self.transformed_pc_rgb)
-          # pc_rgb = pc_depth_mapping(self.transformed_pc, self.base_z)
-          # pc_rgb = pc_depth_mapping(self.transformed_pc_rgb, self.base_z)
-          # print("pc_rgb ",len(pc_rgb))
-        elif DISPLAY_PC_RGB and j == 1:
-          # pc = self.full_pc
-          # pc_rgb = self.full_pc_rgb
-          # pc_rgb = self.transformed_pc_rgb
-          pc_rgb = self.pc_img
-          # print("full_pc ",len(self.full_pc))
-          # print("full_pc_rgb ",len(self.full_pc_rgb))
+    def publish_pc(self, topic, pc):
+        # Derived from:
+        # https://gist.github.com/lucasw/ea04dcd65bc944daea07612314d114bb
+        pc = np.reshape(pc, (len(pc), 4))
+        pc = [[p[0],p[1],p[2],np.uint32(p[3])] for p in pc]
+        print("pc len: ", len(pc))
+        if len(pc) > 0:
+          print("pc[0]: ", pc[0])
         else:
-          continue
-        pc2 = pc_rgb
-        # pc2 = []
-        # print("len(pc): ",len(pc))
-        # for i, p in enumerate(pc):
-          # p2 = [p[0],p[1],p[2],pc_rgb[i][3]]
-          # pc2.append(p2)
-        # if FAVOR_KEYPOINT:
-        #   pc2 = KP.add_to_pc(pc2)
-        pc2 = np.reshape(pc2, (len(pc2), 4))
-        print("pc2 len: ", len(pc2))
-        print("pc_rgb len: ", len(pc_rgb))
-        if len(pc2) > 0:
-          print("pc2[0]: ", pc2[0])
-        else:
-          continue
+          return
         fields = [PointField('x', 0, PointField.FLOAT32, 1),
                   PointField('y', 4, PointField.FLOAT32, 1),
                   PointField('z', 8, PointField.FLOAT32, 1),
                   # PointField('rgba', 12, PointField.UINT32, 1)]
                   PointField('rgb', 12, PointField.UINT32, 1)]
-        pc2 = point_cloud2.create_cloud(self.pc_header, fields, pc2)
-        if j == 0 and DISPLAY_PC_RGB:
-          self.pc_rgb_pub1.publish(pc2)
-        else:
-          self.pc_depth_map_pub2.publish(pc2)
+        if topic == PC_RGB_TOPIC:
+          pc = point_cloud2.create_cloud(self.pc_header, fields, pc)
+          self.pc_rgb_pub1.publish(pc)
+        elif topic == PC_OCTOMAP_TOPIC:
+          fields = [PointField('x', 0, PointField.FLOAT32, 1),
+                  PointField('y', 4, PointField.FLOAT32, 1),
+                  PointField('z', 8, PointField.FLOAT32, 1),
+                  # PointField('rgba', 12, PointField.UINT32, 1)]
+                  PointField('rgb', 12, PointField.UINT32, 1)]
+
+          pc = point_cloud2.create_cloud(self.octomap_header, fields, pc)
+          self.pc_octomap_pub2.publish(pc)
 
     def record_action(self, action_name, subaction_name, action_data=None, do_print=False):
-      # For NN training, we will use the fixed sized self.rgbd instead of 
-      # using self.full_pc():
-      #     ["PC",self.get_pc()],
-      #     ["RGBD", self.get_rgbd()], # ARD: Not needed for most actions
+      # todo: change to store octomap
       self.history.new_action( [["ACTION",action_name, subaction_name], 
          ["RGBD", self.get_rgbd()], 
          ["POSE", self.get_pose()],["JOINTS",self.widowx.get_joint_values()]])

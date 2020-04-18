@@ -34,231 +34,162 @@ class PickPushCollection(Policy):
     Grasps the center of the object with theta perpendicular to the principal axis
     '''
     # def plan_grasp(self, rgb, pc):
-    def plan_grasp(self, rgb, pc):
+    # 
+    def plan_grasp(self, octomap, octomap_header):
         def take_z_axis(elem):
           return elem[2]
-
-        # pc is cluster only; tray has been filtered out
-        # pc has duplicates; filter them out
-        # Sorting used by grasp analysis to compute distances
-        pc1 = sorted(pc, key=take_z_axis)
-        print("len pc1:", len(pc1))
-        pc1 = [p for i, p in enumerate(pc1) if (i > 0 and pc1[i-1][0] != p[0] and pc1[i-1][1] != p[1] and pc1[i-1][2] != p[2])]
-        print("len pc1 no dups:", len(pc1), len(pc1[0]), len(rgb[0]))
 
         ##################
         # CLUSTER ANALYSIS
         ##################
         sys.setrecursionlimit(20000)
-        if COMPUTE_KEYPOINT:
-          # return np.concatenate([self.rgb, depth], axis=2)
-          # rgb = np.split([self.rgb, depth], axis=2)
-          # rgb = rgbd[:, :, :3].astype(np.uint8)
-          # print("len rgbd ", len(rgbd))  # 480
-          # print("len rgbd[0] ", len(rgbd[0]))  # 640
-          # print("rgbd[0] ", rgbd[0][0])        
-          # print("rgbd[0][0] ", rgbd[0][0][0])        
-          # rgb = []
-          # for i in range(480):
-          #   for j in range(640):
-          #     rgb.append((rgbd[i][j][0], rgbd[i][j][1], rgbd[i][j][3]))
-          KP = Keypoints(rgb)
-          KP.publish_img(rgb)
-          # KP.set_rgb_pc_map(pc_map)
-          # self.keypoints = KP.get_kp
-          kp_pc_points = KP.kp_to_3d_point(pc1)  
-          KP.publish_pc(pc1)
-          # print("KP_PC_POINTS:",kp_pc_points)
-        else:
-          KP = None
-# ARD:
+        # pc_clusters is based on current octomap 
         pc_clusters = WorldState()
-        if pc_clusters.analyze_pc(pc1, KP, self.min_samples) == False:
+        if pc_clusters.analyze_pc(octomap, octomap_header, self.min_samples) == False:
           self.min_samples -= 1
           return None
+        # world_clusters is based on previous octomap 
         if self.world_clusters == None:
           self.world_clusters = WorldState()
           self.world_clusters.initialize_world(pc_clusters)
         else:
-          self.world_clusters.integrate_current_pc_into_world(pc_clusters,KP)
+          # update world_clusters to determine changes in octomap analysis
+          self.world_clusters.integrate_current_pc_into_world(pc_clusters)
 
         ###################
         # GRASPING ANALYSIS
         ###################
-        kdtree = spatial.KDTree(pc1)
-#       dist, _ = kdtree.query(pc1, k=1)
-        # # ARD: Huge reduction of points (~5K to ~975 with dups, 670 no dups
-        # # ARD: Better off using get_pc_rgb()?
-        # ARD: pc1 is cluster only; tray has been filtered out
-        # ARD: w dup: 975, no dup: 670 with spacing between points
-        # ARD: OK for choosing grasp, but use rgb for cluster analysis
-#       grasp_pc = [p for i, p in enumerate(pc1) if dist[i] > .003]
-#       print("len grasp_pc:", len(grasp_pc))
-        # PC_BOUNDS, HEIGH_BOUNDS now done in rgb_depth_map_from_pc()
-        # pc = [p for i, p in enumerate(pc) if inside_polygon(
-        #     p, PC_BOUNDS, HEIGHT_BOUNDS) and dist[i] > .003]
-
-        # print("old pc[0]: ", pc[0])
-        # print("new pc[0]: ", pc1[0])
-
-        grasp_pc = pc1
-        evaluated  = None
+        octoclusters = self.world_clusters.octoclusters
         grasps = None     #  x, y, z, theta, probabilities = grasp
-        success = False
-        skipped_evaluated = False
-        for p_i, p in enumerate(grasp_pc):
-
-          if evaluated is not None and p_i in evaluated:
-            # if not skipped_evaluated:
-            #   print("prev eval: ", len(evaluated))
-            skipped_evaluated = True
-            continue
-          else:
-            skipped_evaluated = False
-          ##
-          ## done earlier: doing again will be 2*MIN_OBJ_HEIGHT
-          ##
-          # sect = get_sector(p[0],p[1])
-          # if (p[2] > base_z[sect] - MIN_OBJ_HEIGHT):
-          #   print("TOO CLOSE TO GROUND")
-          #   continue
-          
-          # returns a list of the indices of the neighbors of p
-          neighbors = kdtree.query_ball_point(p, r=GRIP_EVAL_RADIUS)
-
-          # see if kp neighbor
-          if FAVOR_KEYPOINT:
-            kp_neighbor = False
-            if kp_pc_points is not None:
-              for n_i,n in enumerate(neighbors):
-                for kp_i, kp in enumerate(kp_pc_points):
-                  if pc1[n][0] == kp[0] and pc1[n][1] == kp[1] and pc1[n][2] == kp[2]:
-                    print("KP NEIGHBOR: ", p)
-                    kp_neighbor = True
-                    break
-                if kp_neighbor:
-                  break
-
-          pc2 = [pc1[n] for i, n in enumerate(neighbors) 
-                 if abs(p[2] - pc1[n][2]) <= GRIPPER_HEIGHT]
-          if len(pc2) == 0:
-            continue
-          x = [p2[0] for i,p2 in enumerate(pc2)]
-          y = [p2[1] for i,p2 in enumerate(pc2)]
-          z = [p2[2] for i,p2 in enumerate(pc2)]
-
-          pc3 = [pc1[n] for i, n in enumerate(neighbors) 
-                 if abs(p[2] - pc1[n][2]) <= MIN_GRIP_HEIGHT]
-          if len(pc3) < MIN_NEIGHBOR_THRESH:
-            # print("Min Neighbors: ", len(pc3), len(pc2))
-            continue
-          # x_mean = sum(pc3[0])/len(pc3[0])
-          # y_mean = sum(pc3[1])/len(pc3[1])
-          x3 = [p3[0] for i3,p3 in enumerate(pc3)]
-          y3 = [p3[1] for i3,p3 in enumerate(pc3)]
-          x_mean = sum(x3)/len(x3)
-          y_mean = sum(y3)/len(y3)
-          # if evaluated is not None and pc3 is not None and evaluated is not None:
-          #   print("#neighbors: ", len(neighbors), " len(pc3): ", len(pc3), " prev eval: ", len(evaluated))
-          z_grip = p[2] + MIN_GRIP_HEIGHT
-
-          num = 0
-          max_grip_height = MIN_GRIP_HEIGHT   # initialize before computing
-          if FAVOR_KEYPOINT and kp_neighbor:
-            oob_thresh = KP_OOB_THRESH
-          else:
-            oob_thresh = OOB_THRESH
-          # find gripper orientation
-          if len(x3) <= 1:
-            degrees = 0
-            # print("degrees", degrees)
-            success = False
-            num = num+1
-          else:
-            success = True
-            try:
-              slope, intercept, r_value, p_value, std_err = linregress(x3, y3)
-            except:
-              print("Unexpected error:", sys.exc_info()[0])
-              success = False
-            if math.isnan(slope):
-              success = False
-              print("Slope is NaN")
-
-            if success:
-              angle = math.atan(slope)             # slope angle in radians
-              degrees = math.degrees(angle)        # slope angle in degrees
-              # print("degrees", degrees, " = angle", angle, " slope ", slope, "x3",x3,y3)
-              # thetas.append(np.arctan2(eigv[1], eigv[0]) % np.pi)
-              # to convert from degrees to radians, multiply by pi/180.
-              theta = angle
+        for c_id, c in enumerate(octoclusters):
+          grasp_pc = sorted(c, key=take_z_axis)
+          kdtree = spatial.KDTree(grasp_pc)
+          evaluated  = None
+          success = False
+          skipped_evaluated = False
+          for p_i, p in enumerate(grasp_pc):
+            if evaluated is not None and p_i in evaluated:
+              # if not skipped_evaluated:
+              #   print("prev eval: ", len(evaluated))
+              skipped_evaluated = True
+              continue
+            else:
+              skipped_evaluated = False
+            
+            # returns a list of the indices of the neighbors of p
+            neighbors = kdtree.query_ball_point(p, r=GRIP_EVAL_RADIUS)
   
-              # make sure it's a feasible grasp
-              # success = True
-              expand_grip_height = True
-              for i, x1 in enumerate(x):
-                d = shortest_distance_from_line( x1, y[i], slope, -1, intercept)
-                if FAVOR_KEYPOINT and kp_neighbor:
-                  gw = GRIPPER_WIDTH
-                else:
+            pc2 = [pc[n] for i, n in enumerate(neighbors) 
+                   if abs(p[2] - pc[n][2]) <= GRIPPER_HEIGHT]
+            if len(pc2) == 0:
+              continue
+            x = [p2[0] for i,p2 in enumerate(pc2)]
+            y = [p2[1] for i,p2 in enumerate(pc2)]
+            z = [p2[2] for i,p2 in enumerate(pc2)]
+  
+            pc3 = [pc[n] for i, n in enumerate(neighbors) 
+                   if abs(p[2] - pc[n][2]) <= MIN_GRIP_HEIGHT]
+            if len(pc3) < MIN_NEIGHBOR_THRESH:
+              # print("Min Neighbors: ", len(pc3), len(pc2))
+              continue
+            # x_mean = sum(pc3[0])/len(pc3[0])
+            # y_mean = sum(pc3[1])/len(pc3[1])
+            x3 = [p3[0] for i3,p3 in enumerate(pc3)]
+            y3 = [p3[1] for i3,p3 in enumerate(pc3)]
+            x_mean = sum(x3)/len(x3)
+            y_mean = sum(y3)/len(y3)
+            # if evaluated is not None and pc3 is not None and evaluated is not None:
+            #   print("#neighbors: ", len(neighbors), " len(pc3): ", len(pc3), " prev eval: ", len(evaluated))
+            z_grip = p[2] + MIN_GRIP_HEIGHT
+  
+            num = 0
+            max_grip_height = MIN_GRIP_HEIGHT   # initialize before computing
+            oob_thresh = OOB_THRESH
+            # find gripper orientation
+            if len(x3) <= 1:
+              degrees = 0
+              # print("degrees", degrees)
+              success = False
+              num = num+1
+            else:
+              success = True
+              try:
+                slope, intercept, r_value, p_value, std_err = linregress(x3, y3)
+              except:
+                print("Unexpected error:", sys.exc_info()[0])
+                success = False
+              if math.isnan(slope):
+                success = False
+                print("Slope is NaN")
+  
+              if success:
+                angle = math.atan(slope)             # slope angle in radians
+                degrees = math.degrees(angle)        # slope angle in degrees
+                # print("degrees", degrees, " = angle", angle, " slope ", slope, "x3",x3,y3)
+                # thetas.append(np.arctan2(eigv[1], eigv[0]) % np.pi)
+                # to convert from degrees to radians, multiply by pi/180.
+                theta = angle
+    
+                # make sure it's a feasible grasp
+                # success = True
+                expand_grip_height = True
+                for i, x1 in enumerate(x):
+                  d = shortest_distance_from_line( x1, y[i], slope, -1, intercept)
                   gw = GRIPPER_WIDTH/2    # 0.01143
-                if (d > gw):
-                  # too wide to grip
-                  # z=.25 or .00625 is deep enough, anything deeper is gravy
-                  if abs(p[2] - z[i]) <= MIN_GRIP_HEIGHT: # required to grip
-                    num = num+1
-                    # print("OOB:", i, "x:", round(x1,5), "y:", round(y[i],5), "d",round(d,5), "slope", round(slope,5), "inter", round(intercept,5), "zdif", round(abs(p[2] - z[i]),5) )
-                    if num > oob_thresh:
-                      success = False
-                      if FAVOR_KEYPOINT and kp_neighbor:
-                        print("failed: gripper distance: ", d)
-                        print("failed: depth distance: ", abs(p[2] - z[i]))
-                    # break
-                  else:
-                    # can't grip farther than this, but doesn't eliminate grip
-                    max_grip_height = min(abs(p[2] - z[i]), max_grip_height)
-                    # can't grip farther than this
-                    expand_grip_height = False
-                    z_grip = min(z_grip, z[i])
-                    # z_grip = max(z_grip, p[2] + MIN_GRIP_HEIGHT)
-                    if (max_grip_height >  MIN_GRIP_HEIGHT and
-                       max_grip_height <= GRIPPER_HEIGHT):
-                      z_grip = min(z_grip, p[2] + max_grip_height)
-                    elif max_grip_height > GRIPPER_HEIGHT:
-                      z_grip = p[2] + GRIPPER_HEIGHT
-                elif expand_grip_height:
-                    max_grip_height = max(abs(p[2] - z[i]), max_grip_height)
-                    if max_grip_height <= GRIPPER_HEIGHT:
-                      z_grip = max(z_grip, z[i])
+                  if (d > gw):
+                    # too wide to grip
+                    # z=.25 or .00625 is deep enough, anything deeper is gravy
+                    if abs(p[2] - z[i]) <= MIN_GRIP_HEIGHT: # required to grip
+                      num = num+1
+                      # print("OOB:", i, "x:", round(x1,5), "y:", round(y[i],5), "d",round(d,5), "slope", round(slope,5), "inter", round(intercept,5), "zdif", round(abs(p[2] - z[i]),5) )
+                      if num > oob_thresh:
+                        success = False
                     else:
-                      z_grip = p[2] + GRIPPER_HEIGHT
-                z_grip = max(z_grip, p[2] + MIN_GRIP_HEIGHT)
-                z_grip = min(z_grip, p[2] + GRIPPER_HEIGHT)
-
-          # z_grip = z_grip + Z_PLATFORM
-          if num <= oob_thresh:
-            pass
-            # print("SUCCESS  SUCCESS  SUCCESS  SUCCESS  SUCCESS  SUCCESS")
-            # print("num OOB: ", num)
-          if grasps is None:
-            if success:
-              precision = 5
-              g = [round(x_mean, precision), round(y_mean, precision), round(z_grip, precision), round(theta, precision)]
-              if self.world_clusters.in_any_obb([g[0],g[1],g[2]]):
-                grasps = []
-                grasps.append(g)
-          else:
-            if success:
-              g = [round(x_mean, precision), round(y_mean, precision), round(z_grip, precision), round(theta, precision)]
-              if self.world_clusters.in_any_obb([g[0],g[1],g[2]]):
-                if g not in grasps:
+                      # can't grip farther than this, but doesn't eliminate grip
+                      max_grip_height = min(abs(p[2] - z[i]), max_grip_height)
+                      # can't grip farther than this
+                      expand_grip_height = False
+                      z_grip = min(z_grip, z[i])
+                      # z_grip = max(z_grip, p[2] + MIN_GRIP_HEIGHT)
+                      if (max_grip_height >  MIN_GRIP_HEIGHT and
+                         max_grip_height <= GRIPPER_HEIGHT):
+                        z_grip = min(z_grip, p[2] + max_grip_height)
+                      elif max_grip_height > GRIPPER_HEIGHT:
+                        z_grip = p[2] + GRIPPER_HEIGHT
+                  elif expand_grip_height:
+                      max_grip_height = max(abs(p[2] - z[i]), max_grip_height)
+                      if max_grip_height <= GRIPPER_HEIGHT:
+                        z_grip = max(z_grip, z[i])
+                      else:
+                        z_grip = p[2] + GRIPPER_HEIGHT
+                  z_grip = max(z_grip, p[2] + MIN_GRIP_HEIGHT)
+                  z_grip = min(z_grip, p[2] + GRIPPER_HEIGHT)
+  
+            # z_grip = z_grip + Z_PLATFORM
+            if num <= oob_thresh:
+              pass
+              # print("SUCCESS  SUCCESS  SUCCESS  SUCCESS  SUCCESS  SUCCESS")
+              # print("num OOB: ", num)
+            if grasps is None:
+              if success:
+                precision = 5
+                g = [round(x_mean, precision), round(y_mean, precision), round(z_grip, precision), round(theta, precision)]
+                if self.world_clusters.in_any_obb([g[0],g[1],g[2]]):
+                  grasps = []
                   grasps.append(g)
-                  print("Grasp x: ", x_mean, " y: ", y_mean, " deg: ", theta, " z: ", z_grip)
-          if evaluated is None:
-            evaluated = []
-          for n_i, n in enumerate(neighbors):
-            if n not in evaluated:
-              evaluated.append(n)
+            else:
+              if success:
+                g = [round(x_mean, precision), round(y_mean, precision), round(z_grip, precision), round(theta, precision)]
+                if self.world_clusters.in_any_obb([g[0],g[1],g[2]]):
+                  if g not in grasps:
+                    grasps.append(g)
+                    print("Grasp x: ", x_mean, " y: ", y_mean, " deg: ", theta, " z: ", z_grip)
+            if evaluated is None:
+              evaluated = []
+            for n_i, n in enumerate(neighbors):
+              if n not in evaluated:
+                evaluated.append(n)
+        ## END PER-CLUSTER GRASP ANALYSIS LOOP ##
 
         grasp_conf = self.assign_grasp_confidence(grasps)
         # if len(self.world_clusters.clusters) > 0:

@@ -10,133 +10,6 @@ from scipy.signal import convolve2d
 from scipy.ndimage import generic_filter
 from replab_core.utils import *
 
-# Current values:
-# +-.17 by +-.15 tray
-# 136 x 120 produces 16320 ~.1 inches pixels
-def rgb_depth_map_from_pc(pc, rgb_pc, fill=True, init_blank=False):
-      # rgb = np.zeros((RGB_WIDTH, RGB_HEIGHT, 1))
-      rgb = np.zeros( (RGB_WIDTH,RGB_HEIGHT, 3), dtype=np.uint8)
-      depth = np.zeros((RGB_WIDTH, RGB_HEIGHT, 1))
-      pc_map = np.full((RGB_WIDTH, RGB_HEIGHT), -1)
-      # pc_img = np.zeros((RGB_WIDTH, RGB_HEIGHT, 4))
-      pc_img = []
-      pc_b = BASE_PC_BOUNDS
-      ul = pc_b[0]  # upper left
-      br = pc_b[2]  # bottom right
-      # print("ul ",ul," br ",br)
-      x_sz = (abs(ul[0]) + abs(br[0])) 
-      y_sz = (abs(ul[1]) + abs(br[1])) 
-      # print("x_sz ",x_sz," y_sz ",y_sz)
-
-      # min_p0 = 100000000
-      # max_p0 = -100000000
-      # min_p1 = 100000000
-      # max_p1 = -100000000
-      # for i, p in enumerate(pc):
-        # min_p0 = min(p[0],min_p0)
-        # max_p0 = max(p[0],max_p0) 
-        # min_p1 = min(p[1],min_p1) 
-        # max_p1 = max(p[1],max_p1) 
-      # sz_p0 = max_p0 - min_p0 
-      # sz_p1 = max_p1 - min_p1 
-      # print("min/max", min_p0,max_p0,min_p1,max_p1)
-      # random pc should have more pc values than RGB_WIDTH/RGB_HEIGHT
-      # convert to fixed RGB_WIDTH/RGB_HEIGHT
-      for i, p in enumerate(pc):
-        # inside_polygon works for before transform and filter already applied
-        # if not inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS):
-        #   continue
-        # 0,0 is approx center of base before conversion to x/y
-        # x = int((RGB_WIDTH-1)  * (p[0] + (x_sz / 2)) / x_sz +.5) 
-        # y = int((RGB_HEIGHT-1) * (p[1] + (y_sz / 2)) / y_sz +.5)
-        # x = int((RGB_WIDTH-1)  * (p[0] - min_p0) / sz_p0 + .5)
-        # y = int((RGB_HEIGHT-1)  * (p[1] - min_p1) / sz_p1 + .5)
-        x = int((RGB_WIDTH-1)  * max(min((p[0] + (x_sz / 2)),x_sz),0) / x_sz +.5) 
-        y = int((RGB_HEIGHT-1)  * max(min((p[1] + (y_sz / 2)),y_sz),0) / y_sz +.5) 
-        # print("p0 ", p[0], " p1 ", p[1], " x ", x, " y ", y)
-        if pc_map[x,y] == -1:
-          # print(i, " pc_map", x,y,p)
-          # rgb[x,y] = p[3]
-          rgb[x,y] = rgb_pc[i][3]
-          depth[x,y] = p[2]
-          pc_map[x,y] = i
-        else:
-          # take the highest point for img as we're looking at 3d shape from top
-          if (depth[x,y] > p[2]):
-            # rgb[x,y] = p[3]
-            rgb[x,y] = rgb_pc[i][3]
-            depth[x,y] = p[2]
-            pc_map[x,y] = i
-            # print(i, " rep ",x,y)
-          # else:
-            # print(i, " dup ",x,y)
-          ## take the pt closest to center of pixel
-          ## then direct map to PC pixel (p[0],p[1],p[2]), which may 
-          ## be important for KPs
-          ## alternate approach: average multiple pc values 
-          #pp = pc[pc_map[x,y]]
-          #centerx0 = (RGB_WIDTH  * (pp[0] + (x_sz / 2))) % x_sz
-          #centery0 = (RGB_WIDTH  * (pp[1] + (y_sz / 2))) % y_sz
-          #dist0 = sqrt((.5 - centerx0)**2 + (.5 - centery)**2)
-          #centerx1 = (RGB_WIDTH  * (p[0] + (x_sz / 2))) % x_sz
-          #centery1 = (RGB_WIDTH  * (p[1] + (y_sz / 2))) % y_sz
-          #dist1 = sqrt((.5 - centerx1)**2 + (.5 - center1)**2)
-          #if (dist1 < dist0):
-          #  rgb[x,y] = p[3]
-          #  depth[x,y] = p[2]
-          #  pc_map[x,y] = i
-      # handle random PC points not covering all x,y points in rgb
-      # ARD: vectorize
-      if fill:  # move inside loop so that pc_img can still be computed
-        c = 0
-        c2 = 0
-        for x in range(RGB_WIDTH):
-          for y in range(RGB_HEIGHT):
-            if pc_map[x,y] == -1:
-              # if x == int(RGB_WIDTH/2):
-                # print("fill ",x,y)
-              s = 0
-              d = 0
-              n = 0
-              i = []
-              for delta1 in (-1,0,1):
-                for delta2 in (-1,0,1):
-                  if (0 <= (x + delta1) < RGB_WIDTH and
-                      0 <= (y + delta2) < RGB_HEIGHT and
-                      pc_map[x+delta1,y+delta2] != -1):
-                    # s += rgb[x+delta1,y+delta2]
-                    # d += depth[x+delta1,y+delta2]
-                    # n += 1
-                    rgb[x,y] = rgb[x+delta1,y+delta2]
-                    pc_map[x,y] = pc_map[x+delta1,y+delta2]
-             
-              # print("s n d ",s,n,d, " x y ", x,y)
-              if n > 0:
-                pass
-                # rgb[x,y] = int(s / n)
-                # depth[x,y] = d / n
-              else:
-                rgb[x,y] = 0
-                depth[x,y] = 0
-            if pc_map[x,y] != -1:
-              p = rgb_pc[pc_map[x,y]]
-              # if x == 0 and y < 10:
-                # print(" -> ",pc_map[x,y],p)
-              pc_img.append(p)
-              c2 += 1
-            else:
-              c += 1
-      else: # no fill, for Keypoints on a single cluster
-        for x in range(RGB_WIDTH):
-          for y in range(RGB_HEIGHT):
-            if pc_map[x,y] != -1:
-              pc_img.append(rgb_pc[pc_map[x,y]])
-            else:
-              pc_img.append(0)    # black background
-
-      # print("pc_map: ",c2, " nomap ",c)
-      return rgb, depth, pc_map, pc_img
-
 def get_sector(x, y):
       pc_b = BASE_PC_BOUNDS
       # 0,0 is approx center of base
@@ -144,22 +17,44 @@ def get_sector(x, y):
       br = pc_b[2]  # bottom right
       x_sz = (abs(ul[0]) + abs(br[0])) / SECTOR_SIZE
       y_sz = (abs(ul[1]) + abs(br[1])) / SECTOR_SIZE
-      x_sect = int((x + abs(ul[0])) / x_sz)
+      x_sect = min((SECTOR_SIZE-1),max(0,int((x + abs(ul[0])) / x_sz)))
       # print(ul[1], y, y_sz)
-      y_sect = int((y + abs(ul[1])) / y_sz)
+      y_sect = min((SECTOR_SIZE-1),max(0,int((y + abs(ul[1])) / y_sz)))
       # print(ul[1], y_sect, y, y_sz)
       sect = (x_sect * SECTOR_SIZE + y_sect)
+      # print(x_sect, y_sect, sect)
       return sect
 
-def compute_z_sectors(pc):
-      base_z = []
+
+def compute_z_sectors(pc, prev_base_z = None):
       sector_sz = SECTOR_SIZE  # depends on max object size vs. base sz
-      for i in range(sector_sz * sector_sz):
-        base_z.append(0)
+      if prev_base_z != None:
+        base_z = prev_base_z
+      else:
+        base_z = []
+        for i in range(sector_sz * sector_sz):
+          base_z.append(0)
+      # min_y = BIGNUM
+      # min_x = BIGNUM
       for i,p in enumerate(pc):
         sect = get_sector(p[0],p[1])
+        # print("p:", p)
+        # print("base_z:", base_z[sect])
         if base_z[sect] < p[2]:
           base_z[sect] = p[2]
+        if base_z[sect] == 0:
+          print(sect, p)
+        # min_y = min(min_y, p[1])
+        # min_x = min(min_x, p[0])
+      # bz2 = []
+      # for i in range(SECTOR_SIZE*SECTOR_SIZE):
+      #   bz2.append(base_z[i] - MIN_OBJ_HEIGHT)
+      for i in range(SECTOR_SIZE*SECTOR_SIZE):
+        if base_z[i] == 0:
+          # force all black
+          base_z[i] = .55 
+      print("base_z: ", base_z )
+      # print("min: ", min_x, min_y)
       return base_z
 
 def distance_2d(pt1, pt2):
@@ -168,38 +63,131 @@ def distance_2d(pt1, pt2):
 def distance_3d(pt1, pt2):
    return math.sqrt((pt1[0]-pt2[0])**2 + (pt1[1]-pt2[1])**2 + (pt1[2]-pt2[2])**2)
 
+
+def get_pc_min_max(cluster_pc):
+        x,y,z = 0,1,2
+        # # print("len cluster_pc", len(cluster_pc))
+        min_x = BIGNUM
+        max_x = 0
+        min_y = BIGNUM
+        max_y = 0
+        min_z = BIGNUM
+        max_z = 0
+        for pnt_id, pnt in enumerate(cluster_pc):
+          min_x = min(min_x, pnt[x]) 
+          max_x = max(max_x, pnt[x]) 
+          min_y = min(min_y, pnt[y]) 
+          max_y = max(max_y, pnt[y]) 
+          min_z = min(min_z, pnt[z]) 
+          max_z = max(max_z, pnt[z]) 
+        # print("Min/max x:",min_x, max_x)
+        # print("Min/max y:",min_y, max_y)
+        # print("Min/max z:",min_z, max_z)
+        return [[min_x, min_y, min_z], [max_x, max_y, max_z]]
+
+def get_approx_octmap_density(numpts):
+      pc_b = BASE_PC_BOUNDS
+      # 0,0 is approx center of base
+      ul = pc_b[0]  # upper left
+      br = pc_b[2]  # bottom right
+      x_sz = (abs(ul[0]) + abs(br[0])) 
+      y_sz = (abs(ul[1]) + abs(br[1])) 
+      res = OCTOMAP_RESOLUTION
+      exp_num_pnts = (x_sz * y_sz) / res / res
+      dist = res * exp_num_pnts / numpts 
+      dist = min(dist, res)
+      return dist
+
+def build_clusters(pc):
+      from rotor import Rotor
+
+      def take_z_axis(p):
+        return -p[2]
+
+      for i,p in enumerate(sort_by_dist):
+        distances.append([i, p[2]])
+      distances = np.sort(distances, axis=0)
+      rotor = Rotor()
+      rotor.fit_rotate(distances)
+      elbow_index = rotor.get_elbow_index()
+      z_filter = []
+      for e in range(elbow_index):
+        if e < elbow_index-1 and distances[e][1] != distances[e+1][1]:
+          z_filter.append(distances[e][1])
+
+      # not_base = [[p[0],p[1],p[2],np.uint32(p[3])] for p in pc if p[2] not in z_filter]
+      not_base = [[p[0],p[1],p[2],np.uint32(p[3])] for p in pc if p[2] in z_filter]
+      return not_base
+
+
+
+def rm_base(pc):
+      from rotor import Rotor
+
+      def take_z_axis(p):
+        return p[2]
+
+      distances = []
+      sort_by_dist = sorted(pc, key=take_z_axis)
+      for i,p in enumerate(sort_by_dist):
+        distances.append([i, p[2]])
+      distances = np.sort(distances, axis=0)
+      rotor = Rotor()
+      rotor.fit_rotate(distances)
+      elbow_index = rotor.get_elbow_index()
+      # z_filter = []
+      # for e in range(elbow_index):
+      #   if e < elbow_index-1 and distances[e][1] != distances[e+1][1]:
+      #     z_filter.append(distances[e][1])
+      z_filter = [distances[0][1]]
+      print("z_filter: ", z_filter)
+      # not_base = [p for p in pc if p[2] not in z_filter]
+      # not_base = [[p[0],p[1],p[2],np.uint32(p[3])] for p in pc if p[2] not in z_filter]
+      not_base = [[p[0],p[1],p[2],np.uint32(p[3])] for p in pc if p[2] in z_filter]
+      return not_base
+      # return not_base[elbow_index][1]
+      # return distances[elbow_index][1]
+
 # Python PCL interface for pcl_segment_cluster does not work in 
 # some patch releases.  Workaround with python implementation.
-def segment_cluster(pc):
+def segment_cluster(pc1):
       # seg.set_normal_distance_weight(0.1)
       # seg.set_method_type(pcl.SAC_RANSAC)
       # seg.set_max_iterations(100)
       # seg.set_distance_threshold(0.03)
+      # pc = [[p[0],p[1],p[2]] for p in pc1]
+      pc = np.array(pc1)[:, :3]
       max_iterations=100
       best_inliers = None
       n_inliers_to_stop = len(pc)
-      self.point = np.mean(pc, axis=0)
+      point = np.mean(pc, axis=0)
       # data is an np.array
       # data_adjust = data - mean
-      data_adjust = pc - self.point
+      data_adjust = pc - point
       matrix = np.cov(data_adjust.T)  # transpose data_adjust
-      eigenvalues, self.normal = np.linalg.eig(matrix)
+      eigenvalues, normal = np.linalg.eig(matrix)
       n_best_inliers = 0
-      max_dist = 1e-4  # 1e-4 = 0.0001.
+      # max_dist = 1e-4  # 1e-4 = 0.0001.
+      # max_dist = 1e-3  # 1e-4 = 0.0001.
+      # max_dist = sqrt(0.000255 * 0.000255 * 2)
+      # max_dist = 0.000361
+      # max_dist = 0.00785
+      # max_dist = 0.009
+      max_dist = 0.0006
       print_once = True
       for i in range(max_iterations):
           # k_points = sampler.get_sample()
           normal = np.cross(pc[1] - pc[0], pc[2] - pc[0])
-          self.point = pc[0]
+          point = pc[0]
           if normal[0] == 0 and normal[1] == 0 and normal[2] == 0:
             if print_once:
               print_once = False
               print("normal: ",normal)
-            self.normal = [1,1,1]
+            normal = [1,1,1]
           else:
-            self.normal = normal / np.linalg.norm(normal)
-          vectors = pc - self.point
-          all_distances = np.abs(np.dot(vectors, self.normal))
+            normal = normal / np.linalg.norm(normal)
+          vectors = pc - point
+          all_distances = np.abs(np.dot(vectors, normal))
           inliers = all_distances <= max_dist
           n_inliers = np.sum(inliers)
           if n_inliers > n_best_inliers:
@@ -207,9 +195,9 @@ def segment_cluster(pc):
               best_inliers = inliers
               if n_best_inliers > n_inliers_to_stop:
                   break
-      # print("plane: ", best_inliers)            # true/false array
-      # print("len plane: ", len(best_inliers))
-      # print("len pc   : ", len(pc))             # same len as above
+      print("plane: ", best_inliers)            # true/false array
+      print("len plane: ", len(best_inliers))
+      print("len pc   : ", len(pc))             # same len as above
       # for i in range(len(best_inliers)):
       #   if i % 10 == 0:
       #     print(pc[i])
@@ -301,4 +289,88 @@ def from_2d_pixel_to_3d_point(points, pc_3d):
         # print("pc_points: ", pc_points)
         return pc_points
 
+def add_color_slow(pc1,pc2):
+   # simple N*M + 2N algorithm: unacceptably slow
+   min_dist = [[BIGNUM, 0] for i1, p1 in enumerate(pc1)]
+   print("add_color")
+   for i1, p1 in enumerate(pc1):
+     for p2 in pc2:
+       if distance_3d(p1,p2) < min_dist[i1][0]:
+         min_dist[i1] = [distance_3d(p1,p2), p2[3]]
+   pc3 = [[p1[0],p1[1],p1[2],min_dist[i1][1]] for i1, p1 in enumerate(pc1)]
+   print("add_color2")
+   return pc3
+
+# pc1 should be an octomap
+def add_color(pc1,pc2):
+   print("add_color")
+   # simple O(len(pc1) + len(pc2)) algorithm
+   # TODO: replace following with computed numbers
+   # min = [-0.16875, -0.14875, 0.46625]
+   # max = [0.17125, 0.15125, 0.48875]
+   # resolution = .0025
+   # diff = [.34, .3, .0225]
+   # xyz_dim = [136, 120, 9]
+
+   def offset(pt):
+     min = [-0.16875, -0.14875, 0.46625]
+     xyz_dim = [136, 120, 9]
+     resolution = .0025
+     offst = []
+     for i in range(3):
+       offst.append(int((pt[i] - min[i]) / resolution + .5))
+       if offst[i] < 0:
+         offst[i] = 0
+       if offst[i] >= xyz_dim[i]:
+         offst[i] = xyz_dim[i] - 1
+     return offst
+
+   def center_pt(x,y,z):
+     min = [-0.16875, -0.14875, 0.46625]
+     resolution = .0025
+     ctr = []
+     for i in range(3):
+       ctr.append(min[i] + (x * resolution))
+     return ctr
+
+   color = np.zeros((136, 120, 9)) 
+   dist  = np.ones((136, 120, 9)) 
+   for p in pc2:
+     [x,y,z] = offset(p)
+     d = distance_3d(p, center_pt(x,y,z)) 
+     if d < dist[x,y,z]:
+       dist[x,y,z] = d
+       color[x,y,z] = p[3] 
+   pc1_w_color = []
+   for p in pc1:
+     pc1_w_color.append(list(p))
+   for p_id, p in enumerate(pc1):
+     x,y,z = offset(p)
+     if dist[x,y,z] < 1:
+       # print("x,y,z",x,y,z)
+       pc1_w_color[p_id][3] = color[x,y,z]
+     else:
+       for i in range(5):
+         p2_x = [x, max(x-i,0), min(x+i, 136-1)]
+         p2_y = [y, max(y-i,0), min(y+i, 120-1)]
+         p2_z = [z, max(z-i,0), min(z+i, 9-1)]
+         found = False
+         for j1 in range(3):
+           for j2 in range(3):
+             for j3 in range(3):
+               if dist[p2_x[j1], p2_y[j2], p2_z[j3]] < 1:
+                 pc1_w_color[p_id][3] = color[p2_x[j1], p2_y[j2], p2_z[j3]]
+                 # pc1_w_color[p_id] = ( pc1_w_color[p_id][0], pc1_w_color[p_id][1], pc1_w_color[p_id][2], color[p2_x[j1], p2_y[j2], p2_z[j3]])
+                 found = True
+                 break
+               else:
+                 # pc1_w_color[p_id] = ( pc1_w_color[p_id][0], pc1_w_color[p_id][1], pc1_w_color[p_id][2], 0)
+                 pc1_w_color[p_id][3] = 0
+             if found:
+               break
+           if found:
+             break
+         if found:
+           break
+   return tuple(pc1_w_color)
 

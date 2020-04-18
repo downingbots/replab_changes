@@ -1,7 +1,7 @@
 import time
 
 class ActionHistory():
-    def __init__():
+    def __init__(self):
       self.event_id = 0
       self.action_id = 0
       self.event = []
@@ -12,18 +12,19 @@ class ActionHistory():
     # evaluation.
     def new_event(self):
       self.event.append(self.action)         # save previous action
-      save_event()
+      # ARD: TODO
+      # save_event()
       self.action = [] 
       self.event_id += 1
       self.move_id = 0
       return self.event_id
 
-    def new_action(self,action):
+    def new_action(self,action, subaction = None):
       self.event.append(self.action)         # save previous action
       self.action_id += 1
       self.action = []
       self.action.append(["ID", self.event_id, self.action_id, time.time()])
-      self.action.concatenate(action)
+      self.action.append(["ACTION", action, subaction])
       return [self.event_id, self.action_id]
 
     def action_info(self,info):
@@ -34,7 +35,7 @@ class ActionHistory():
 
     def find_action(self, action, info = None):
       # always [["ID",...]["ACTION", ...][... data ...]]
-      for e in range(2)
+      for e in range(2):
         evnt = self.event[self.event_id - e]
         for a in range(self.action_id):
           act = event[self.action_id - a][1]

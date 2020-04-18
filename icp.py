@@ -40,11 +40,11 @@ def best_fit_transform(A, B):
     # translate points to their centroids
     centroid_A = np.mean(A, axis=0)
     centroid_B = np.mean(B, axis=0)
-    AA = A - centroid_A
-    BB = B - centroid_B
+    A = A - centroid_A
+    B = B - centroid_B
 
     # rotation matrix
-    H = np.dot(AA.T, BB)
+    H = np.dot(A.T, B)
     U, S, Vt = np.linalg.svd(H)
     R = np.dot(Vt.T, U.T)
 
@@ -82,7 +82,6 @@ def nearest_neighbor(src, dst):
     distances, indices = neigh.kneighbors(src, return_distance=True)
     return distances.ravel(), indices.ravel()
 
-
 def icp(A, B, init_pose=None, max_iterations=20, tolerance=0.001):
     '''
     The Iterative Closest Point method: finds best-fit transform that maps points A on to points B
@@ -97,7 +96,6 @@ def icp(A, B, init_pose=None, max_iterations=20, tolerance=0.001):
         distances: Euclidean distances (errors) of the nearest neighbor
         i: number of iterations to converge
     '''
-
     assert A.shape == B.shape
 
     # get number of dimensions
@@ -135,3 +133,4 @@ def icp(A, B, init_pose=None, max_iterations=20, tolerance=0.001):
     T,_,_ = best_fit_transform(A, src[:m,:].T)
 
     return T, distances, i
+

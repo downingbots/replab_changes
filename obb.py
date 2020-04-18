@@ -214,25 +214,31 @@ class OBB:
       # bb2 = pc_cluster.cluster['obb']
       if bb == None or bb2 == None:
         print("no bounding box ")
-        return None
+        return None, None
       try:
+        # print("obb_vol",OBB.obb_volume(bb))
+        # print("obb_vol",OBB.obb_volume(bb2))
         v1 = OBB.obb_volume(bb)
         # v1b = OBB.obbvolume(bb)
         v2 = OBB.obb_volume(bb2)
         # v2b = OBB.obbvolume(bb2)
-        combined_pnts = bb.points+bb2.points
+        # combined_pnts = bb.points+bb2.points
+        print("combined_pnts: ",combined_pnts)
         hull = ConvexHull(combined_pnts)
+        # print("volume: ",hull.volume)
         v3 = hull.volume
       except:
         # See above for failed examples of better QhullError handling...
-        return 0
+        return None, None
+      # print("v1,2: ",v1, v2)
       if v1 == None or v2 == None:
-        return 0
+        return None, None
       # take min in case v1 >>> v2 or v2 >>> v1
       max_overlp = max(v1,v2) / hull.volume
       min_overlp = min(v1,v2) / hull.volume
       # print("obb vols:", v1,v1b, v2, v2b, v3, overlp, len(hull.vertices))
       # print("obb vols:", v1,v2, v3, overlp, len(hull.vertices))
+      # print("max,min", max_overlp, min_overlp)
       return max_overlp, min_overlp
 
     @classmethod
