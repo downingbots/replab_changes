@@ -10,6 +10,12 @@ from scipy.signal import convolve2d
 from scipy.ndimage import generic_filter
 from replab_core.utils import *
 
+def pt_lst_eq(p1, p2):
+      return (p1[0] == p2[0] and p1[1] == p2[1] and p1[2] == p2[2])
+
+def pt_in_lst(p1, lst):
+      return any(pt_lst_eq(p1,p2) for p2 in lst)
+
 def get_sector(x, y):
       pc_b = BASE_PC_BOUNDS
       # 0,0 is approx center of base
@@ -25,6 +31,27 @@ def get_sector(x, y):
       # print(x_sect, y_sect, sect)
       return sect
 
+def compute_z_sectors_from_base(base_pc):
+      sector_sz = SECTOR_SIZE  # depends on max object size vs. base sz
+      base_z = []
+      min_sect = BIGNUM
+      for i in range(sector_sz * sector_sz):
+        base_z.append(BIGNUM)
+      for i,p in enumerate(base_pc):
+        sect = get_sector(p[0],p[1])
+        if base_z[sect] > p[2]:
+          base_z[sect] = p[2]
+          if min_sect > p[2]:
+            base_z[sect] = p[2]
+        if base_z[sect] == BIGNUM:
+          print(sect, p)
+      for i in range(SECTOR_SIZE*SECTOR_SIZE):
+        if base_z[i] == BIGNUM:
+          # force all black
+          base_z[i] = min_sect
+      print("base_z: ", base_z )
+      # print("min: ", min_x, min_y)
+      return base_z
 
 def compute_z_sectors(pc, prev_base_z = None):
       sector_sz = SECTOR_SIZE  # depends on max object size vs. base sz
@@ -342,35 +369,35 @@ def add_color(pc1,pc2):
        dist[x,y,z] = d
        color[x,y,z] = p[3] 
    pc1_w_color = []
-   for p in pc1:
-     pc1_w_color.append(list(p))
    for p_id, p in enumerate(pc1):
      x,y,z = offset(p)
      if dist[x,y,z] < 1:
        # print("x,y,z",x,y,z)
-       pc1_w_color[p_id][3] = color[x,y,z]
+       p1 = pc1[p_id]
+       pc1_w_color.append([p1[0],p1[1],p1[2],color[x,y,z]])
      else:
+       found = False
        for i in range(5):
          p2_x = [x, max(x-i,0), min(x+i, 136-1)]
          p2_y = [y, max(y-i,0), min(y+i, 120-1)]
          p2_z = [z, max(z-i,0), min(z+i, 9-1)]
-         found = False
          for j1 in range(3):
            for j2 in range(3):
              for j3 in range(3):
                if dist[p2_x[j1], p2_y[j2], p2_z[j3]] < 1:
-                 pc1_w_color[p_id][3] = color[p2_x[j1], p2_y[j2], p2_z[j3]]
-                 # pc1_w_color[p_id] = ( pc1_w_color[p_id][0], pc1_w_color[p_id][1], pc1_w_color[p_id][2], color[p2_x[j1], p2_y[j2], p2_z[j3]])
+                 p1 = pc1[p_id]
+                 colour = color[p2_x[j1], p2_y[j2], p2_z[j3]]
+                 pc1_w_color.append([p1[0],p1[1],p1[2],colour])
                  found = True
                  break
-               else:
-                 # pc1_w_color[p_id] = ( pc1_w_color[p_id][0], pc1_w_color[p_id][1], pc1_w_color[p_id][2], 0)
-                 pc1_w_color[p_id][3] = 0
              if found:
                break
            if found:
              break
          if found:
            break
+       if not found:
+         p1 = pc1[p_id]
+         pc1_w_color.append([p1[0],p1[1],p1[2],0])
    return tuple(pc1_w_color)
 

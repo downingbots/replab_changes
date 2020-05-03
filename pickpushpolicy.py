@@ -45,6 +45,10 @@ class PickPushCollection(Policy):
         sys.setrecursionlimit(20000)
         # pc_clusters is based on current octomap 
         pc_clusters = WorldState()
+        if self.world_clusters != None:
+          # enable optimizations based upon world state
+          # print("w_clust", len(self.world_clusters.octobase))
+          pc_clusters.copy_world_state_to_curr_pc(self.world_clusters)
         if pc_clusters.analyze_pc(octomap, octomap_header, self.min_samples) == False:
           self.min_samples -= 1
           return None
@@ -52,15 +56,25 @@ class PickPushCollection(Policy):
         if self.world_clusters == None:
           self.world_clusters = WorldState()
           self.world_clusters.initialize_world(pc_clusters)
+          print("w_clust", len(self.world_clusters.octobase))
         else:
           # update world_clusters to determine changes in octomap analysis
           self.world_clusters.integrate_current_pc_into_world(pc_clusters)
+          print("w_clust", len(self.world_clusters.octobase))
 
+        DEBUG_OCTOMAP = False
+        if DEBUG_OCTOMAP:
+          # skip grasping
+          return None
         ###################
         # GRASPING ANALYSIS
         ###################
         octoclusters = self.world_clusters.octoclusters
         grasps = None     #  x, y, z, theta, probabilities = grasp
+        cluster_grasp_cnt = []
+        for i in range(len(self.world_clusters)):
+          # max grasps per cluster
+          cluster_grasp_cnt[i].append(0)
         for c_id, c in enumerate(octoclusters):
           grasp_pc = sorted(c, key=take_z_axis)
           kdtree = spatial.KDTree(grasp_pc)
@@ -79,16 +93,16 @@ class PickPushCollection(Policy):
             # returns a list of the indices of the neighbors of p
             neighbors = kdtree.query_ball_point(p, r=GRIP_EVAL_RADIUS)
   
-            pc2 = [pc[n] for i, n in enumerate(neighbors) 
-                   if abs(p[2] - pc[n][2]) <= GRIPPER_HEIGHT]
+            pc2 = [grasp_pc[n] for i, n in enumerate(neighbors) 
+                   if abs(p[2] - grasp_pc[n][2]) <= GRIPPER_HEIGHT]
             if len(pc2) == 0:
               continue
             x = [p2[0] for i,p2 in enumerate(pc2)]
             y = [p2[1] for i,p2 in enumerate(pc2)]
             z = [p2[2] for i,p2 in enumerate(pc2)]
   
-            pc3 = [pc[n] for i, n in enumerate(neighbors) 
-                   if abs(p[2] - pc[n][2]) <= MIN_GRIP_HEIGHT]
+            pc3 = [grasp_pc[n] for i, n in enumerate(neighbors) 
+                   if abs(p[2] - grasp_pc[n][2]) <= MIN_GRIP_HEIGHT]
             if len(pc3) < MIN_NEIGHBOR_THRESH:
               # print("Min Neighbors: ", len(pc3), len(pc2))
               continue
@@ -174,16 +188,23 @@ class PickPushCollection(Policy):
               if success:
                 precision = 5
                 g = [round(x_mean, precision), round(y_mean, precision), round(z_grip, precision), round(theta, precision)]
-                if self.world_clusters.in_any_obb([g[0],g[1],g[2]]):
-                  grasps = []
-                  grasps.append(g)
+                g_c_id = self.world_clusters.in_any_obb([g[0],g[1],g[2]])
+                if g_c_id != None:
+                  cluster_grasp_cnt[g_c_id] += 1
+                  # self.world_clusters.clusters[g_c_id].cluster['grasps'].append(g)
+                  if cluster_grasp_cnt[g_c_id] < 5:
+                    grasps = []
+                    grasps.append(g)
             else:
               if success:
                 g = [round(x_mean, precision), round(y_mean, precision), round(z_grip, precision), round(theta, precision)]
-                if self.world_clusters.in_any_obb([g[0],g[1],g[2]]):
+                g_c_id = self.world_clusters.in_any_obb([g[0],g[1],g[2]]):
+                if g_c_id != None:
                   if g not in grasps:
-                    grasps.append(g)
-                    print("Grasp x: ", x_mean, " y: ", y_mean, " deg: ", theta, " z: ", z_grip)
+                    cluster_grasp_cnt[g_c_id] += 1
+                    if cluster_grasp_cnt[g_c_id] < 5:
+                      grasps.append(g)
+                      print("Grasp x: ", x_mean, " y: ", y_mean, " deg: ", theta, " z: ", z_grip)
             if evaluated is None:
               evaluated = []
             for n_i, n in enumerate(neighbors):

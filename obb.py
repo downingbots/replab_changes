@@ -1,4 +1,4 @@
-from numpy import ndarray, array, asarray, dot, cross, cov, array, finfo, min as npmin, max as npmax
+from numpy import ndarray, array, asarray, dot, cross, cov, array, finfo, min as npmin, max as npmax, concatenate as npconcat
 from numpy.linalg import eigh, norm
 from scipy.spatial import ConvexHull
 import sys
@@ -198,7 +198,7 @@ class OBB:
     @classmethod
     def obb_volume(cls, bb):
       # bb = self.cluster['obb'] 
-      if bb is None:
+      if bb == None:
         print("no bounding box ")
         return None
       try:
@@ -208,43 +208,47 @@ class OBB:
       return hull.volume
 
     @classmethod
-    def obb_overlap(cls, bb, bb2):
+    def obb_overlap(cls, bb1, bb2):
       from scipy.spatial import ConvexHull
-      # bb = self.cluster['obb'] 
-      # bb2 = pc_cluster.cluster['obb']
-      if bb == None or bb2 == None:
+      if bb1 == None or bb2 == None:
         print("no bounding box ")
         return None, None
       try:
-        # print("obb_vol",OBB.obb_volume(bb))
+        # print("obb_vol",OBB.obb_volume(bb1))
         # print("obb_vol",OBB.obb_volume(bb2))
-        v1 = OBB.obb_volume(bb)
-        # v1b = OBB.obbvolume(bb)
+        v1 = OBB.obb_volume(bb1)
         v2 = OBB.obb_volume(bb2)
-        # v2b = OBB.obbvolume(bb2)
-        # combined_pnts = bb.points+bb2.points
-        print("combined_pnts: ",combined_pnts)
+        combined_pnts = bb1.points+bb2.points
+        # print("combined_pnts: ",combined_pnts)
         hull = ConvexHull(combined_pnts)
         # print("volume: ",hull.volume)
         v3 = hull.volume
+        if v3 is None or v1 is None or v2 is None:
+          return None, None
       except:
         # See above for failed examples of better QhullError handling...
+        print("obb compare exception")
+        errstr = sys.exc_info()[1]
+        print(errstr[:100])
         return None, None
       # print("v1,2: ",v1, v2)
       if v1 == None or v2 == None:
+        print("obb compare v1 or v2 == None")
         return None, None
       # take min in case v1 >>> v2 or v2 >>> v1
-      max_overlp = max(v1,v2) / hull.volume
-      min_overlp = min(v1,v2) / hull.volume
+      bb1_bb2_overlp = v1 / v3
+      bb2_bb1_overlp = v2 / v3
       # print("obb vols:", v1,v1b, v2, v2b, v3, overlp, len(hull.vertices))
       # print("obb vols:", v1,v2, v3, overlp, len(hull.vertices))
       # print("max,min", max_overlp, min_overlp)
-      return max_overlp, min_overlp
+      return bb1_bb2_overlp, bb2_bb1_overlp
 
     @classmethod
     def in_obb(cls, bb, pt):
       def pyramid_vol(bb,v0,v1,v2,v3,pt):
-        hull = ConvexHull([bb.points[v0], bb.points[v1], bb.points[v2], bb.points[v3], pt])
+        pt = array(pt, dtype=float)
+        pts = array((bb.points[v0], bb.points[v1], bb.points[v2], bb.points[v3], pt), dtype=float)
+        hull = ConvexHull(pts)
         return hull.volume
 
 #      # bug: Max, Min need to be transformed first.
@@ -281,7 +285,7 @@ class OBB:
       except:
         # on boundary(?)
         errstr = sys.exc_info()[1]
-        print(errstr[:100])
+        # print("errstr:",errstr[:100])
         return True, None
         # if (sys.exc_info()[0] != "<class 'scipy.spatial.qhull.QhullError'>"):
         # if (sys.exc_info()[0] != 'scipy.spatial.qhull.QhullError'):
