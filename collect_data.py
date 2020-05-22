@@ -24,10 +24,13 @@ def main():
                         help="Starting index for sample numbering")
     parser.add_argument('--method', type=str, default='pickpush',
                         help="Method used for planning grasps", choices=METHODS)
+    parser.add_argument('--calibrate', type=str, default='none',
+                        help="Method used for calibrating grasps", 
+                        choices=CALIBRATION_METHODS)
     parser.add_argument('--email', action="store_true", default=False,
                         help="Send an email if data collection is interrupted (email settings must be configured correctly)")
 
-    print(METHODS)
+    # print(METHODS)
     args = parser.parse_args()
 
     assert args.method in METHODS
@@ -65,8 +68,10 @@ def main():
             print('Method not recognized, exiting')
             exit()
 
-        sample_id = args.start
+        if args.calibrate == 'manual':
+            executor.set_calibration(True)
 
+        sample_id = args.start
         while sample_id < args.start + args.samples:
 
             print('\n=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n')
@@ -102,7 +107,7 @@ def main():
                 executor.widowx.open_gripper()
                 continue
 
-            if grasps is None or len(grasps) == 0:
+            if grasps == None or len(grasps) == 0:
                 print('No grasps plannable, sweeping rig')
                 executor.widowx.sweep_arena()
                 executor.widowx.move_to_neutral()
@@ -111,11 +116,17 @@ def main():
 
             confidences = []
             kept_indices = []
+            calib_grasps = []
 
             for i, (grasp, confidence) in enumerate(grasps):
-                if inside_polygon(grasp[:3], END_EFFECTOR_BOUNDS):
+                print(i," grasp:", grasp)
+                if inside_polygon([grasp[0],grasp[1],grasp[2]], END_EFFECTOR_BOUNDS):
                     kept_indices.append(i)
                     confidences.append(confidence)
+                    calib_grasps.append(grasp)
+                else:
+                   print("outside_polygon:", [grasp[0],grasp[1],grasp[2]])
+            # print("calib_grasps", calib_grasps)
 
             if len(confidences) == 0:
                 print('All planned grasps out of bounds / invalid, resetting...')
@@ -127,7 +138,13 @@ def main():
             selected = np.random.choice(np.argsort(confidences)[-5:])
             grasp = grasps[kept_indices[selected]][0]
 
-            if args.method == 'pickpush':
+            if args.calibrate == 'manual':
+              print("Calibrate grasps")
+              executor.sample['calibrate'] = 'manual'
+              executor.publish_grasps(grasps, calib_grasps[0])
+              executor.record_grasp(calib_grasps[0], grasps)
+              success, err = executor.calibrate_grasp(calib_grasps, confidences,  policy)
+            elif args.method == 'pickpush':
               print("Publish grasps")
               executor.publish_grasps(grasps, grasp)
               executor.record_grasp(grasp, grasps)

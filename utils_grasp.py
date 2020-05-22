@@ -84,6 +84,26 @@ def compute_z_sectors(pc, prev_base_z = None):
       # print("min: ", min_x, min_y)
       return base_z
 
+# From:
+# https://stackoverflow.com/questions/510357/python-read-a-single-character-from-the-user
+def getChar():
+      try:
+        # for POSIX-based systems (with termios & tty support)
+        import tty, sys, termios  # raises ImportError if unsupported
+        fd = sys.stdin.fileno()
+        oldSettings = termios.tcgetattr(fd) 
+        try:
+            tty.setcbreak(fd)
+            answer = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, oldSettings)
+        return answer
+
+      except ImportError:
+        # for Windows-based systems
+        import msvcrt # If successful, we are on Windows
+        return msvcrt.getch()
+
 def distance_2d(pt1, pt2):
    return math.sqrt((pt1[0]-pt2[0])**2 + (pt1[1]-pt2[1])**2)
 

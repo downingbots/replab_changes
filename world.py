@@ -30,23 +30,35 @@ class WorldState:
       self.world_state = 'UNINITIALIZED' 
                         # ANALYZE PLAYGROUND, ANALYZE CLUSTERS, 
                         # ISOLATE, INTERACT
-      self.num_clusters = 0
-      self.expected_num_clusters = 0
-      self.clusters = []
-      self.clusters_history = []
-      self.octoclusters = []
-      self.octobase = []
-      self.possible_octobase = []
+      self.num_clusters          = []
+      self.clusters              = []
+      self.octoclusters          = []
+      self.octobase              = []
+      self.possible_octobase     = []
       self.prev_target_w_cluster = None
-      self.prev_target_w_grip = []
-      self.prev_target_action = []
-      self.base_z = None
-      self.recompute_octobase = False
-      self.w_c_pot_base = []
+      self.prev_target_w_grasp    = []
+      self.prev_target_action    = []
+      self.base_z                = None
+      self.obb_prev_count        = 0
+      self.obb_w_pc_pct_ovlp     = []
+      self.w_expected_num_clusters = 0
+      self.w_poss_base_pts       = []
+      self.w_unmatched           = None
+      self.w_best_match          = []
+      self.w_unmoved_match       = None
+      self.w_slightly_moved_match = None
+      self.w_moved_match         = None
+      self.w_active_list         = []
+      self.pc_best_match         = []
+      self.pc_unmatched          = None
+      self.pc_unmoved_match      = None
+      self.pc_slightly_moved_match = None
+      self.pc_moved_match        = None
+      self.pc_unmatched          = None
+
       self.pc_octocluster_pub = rospy.Publisher(PC_OCTOCLUSTER_TOPIC, PointCloud2, queue_size=1)
-      self.pc_octobase_pub = rospy.Publisher(PC_OCTOBASE_TOPIC, PointCloud2, queue_size=1)
-      self.obb_pub = rospy.Publisher(OBB_TOPIC, MarkerArray, queue_size=1)
-      self.obb_prev_count = 0
+      self.pc_octobase_pub    = rospy.Publisher(PC_OCTOBASE_TOPIC, PointCloud2, queue_size=1)
+      self.obb_pub            = rospy.Publisher(OBB_TOPIC, MarkerArray, queue_size=1)
 
     def create_cluster(self, id = None, status = None, centroid = None, 
                shape = None, shape_attr = None, bounding_box = None,
@@ -69,14 +81,33 @@ class WorldState:
       self.world_state = 'ANALYZE PLAYGROUND'
                         # ANALYZE PLAYGROUND, ANALYZE CLUSTERS,
                         # ISOLATE, INTERACT
-      self.num_clusters = pc_clusters.num_clusters
-      self.clusters = pc_clusters.clusters
-      self.copy_curr_pc_to_world_state(pc_clusters)
+      # self.clusters = pc_clusters.clusters
+      self.w_best_match = []
+      pc_clusters.pc_best_match = []
+      self.w_expected_num_clusters = len(pc_clusters.clusters) - len(pc_clusters.possible_octobase)
+      self.base_z = pc_clusters.base_z
+      self.octoclusters = pc_clusters.octoclusters
+      self.octobase = pc_clusters.octobase
+      for pc_c_id,pc_c in enumerate(pc_clusters.clusters):
+        if pc_c_id not in pc_clusters.possible_octobase:
+          n = len(self.clusters)
+          self.clusters.append(pc_c)
+          self.clusters[n].id = n
+          self.clusters[n].cluster['status'] = 'ACTIVE'
+      for pc_c_id,pc_c in enumerate(pc_clusters.clusters):
+        if pc_c_id in pc_clusters.possible_octobase:
+          self.w_poss_base_pts.append(pc_c.cluster['shape'])
 
-    def set_target_grip(self, w_c_id, grip):
+    def set_target_grasp(self, w_c_id, grasp, action):
       self.prev_target_w_cluster = w_c_id
-      self.prev_target_w_grip = grip
+      self.prev_target_w_grasp = grasp
+      self.prev_target_action = action
 
+    def active(self, w_c_id):
+      if self.clusters[w_c_id].cluster['status'] == 'ACTIVE':
+        return True
+      return False
+      
     # store in file
     def save_world(self):
       pass
@@ -85,49 +116,234 @@ class WorldState:
     def retore_world(self):
       pass
 
-    def add_world_cluster(self, cluster):
-      if self.cluster['id'] == None:
-        self.cluster['id'] = self.num_clusters
-        self.num_clusters += 1
-      self.world.append(cluster)
+      # we keep a sequence of pc state history
+      # there is one integrated world state
+      # the world state keeps a current
+      #    cluster => ACTIVE, INACTIVE, POSSIBLE_BASE
+
+      # do we need to reorder or just remap?
+      # remapping requires multi level of remapping
+      # but what if knowledge is gained over time?
+      #    -> want knowledge to be accumulated to most recent...
+      # Keep an array chain of pc_world_states? with mappings?
+      # copy over latest state to world?
+      # have separate accumulated state? (using copy)
+      #    => base_z, octobase, possible base
+      #    => state transistions
+      #    => self.w_poss_base_pts = []
+      #    => target
+      # handle "has target cluster moved?"
+      # some of the data gets stored
+
+      # How state is used:
+      #   expected_number_of_clusters
+      #   try different objects (use history)
+      #   knowledge that a piece is missing (inside a box)
+      #   knowledge about hidden part of an object
+      #   hard/soft
+      #   knowledge of different grips success / fail
+      #   "has target moved?"
+      #   knowledge that two objects were stacked
+      #   knowledge of base 
+      #   knowledge of unstacking / stacking 
+      #   knowledge of rolling
+      #      -> good for making a goal / knocking over
+      #   failed perfection match
+      #
+      # x,y,z calibration offset (not a world level?)
+  
+
 
     def copy_world_state_to_curr_pc(self, w_clusters):
-        print("copy_world_state_to_curr_pc: ", len(w_clusters.octobase), len(w_clusters.possible_octobase))
-        # enables optimations based upon world state
-        self.octobase = w_clusters.octobase
-        # self.possible_octobase = [] 
-        # for pob_cid in w_clusters.possible_octobase:
-        #   self.octobase = np.concatenate((np.array(self.octobase), np.array(w_clusters.clusters[pob_cid].cluster['shape'])))
-        self.w_c_pot_base = w_clusters.w_c_pot_base
-        # for w_c_id, w_c in enumerate(w_clusters.clusters):
-          # self.w_c_obb.append(w_c.cluster['obb'])
-          # cluster_pc = np.array(w_c.cluster['shape'])[:, :3]
-          # self.w_c_mean.append(np.mean(cluster_pc, axis=0))
-          # self.w_c_len.append(len(cluster_pc))
-        for ob_id in self.possible_octobase:
-          self.w_c_pot_base.append(w_clusters.clusters[ob_id].cluster['shape'])
+      # pc rederives from scratch
+      self.w_expected_num_clusters = w_clusters.w_expected_num_clusters 
+      self.w_best_match = w_clusters.w_best_match 
+      self.obb_prev_count        = w_clusters.obb_prev_count
+      self.obb_w_pc_pct_ovlp     = w_clusters.obb_w_pc_pct_ovlp
 
     def copy_curr_pc_to_world_state(self, pc_clusters):
-        print("copy over pc clusters")
-        # just store the pc_clusters 
-        self.clusters_history.append(self.clusters)
-        self.clusters = pc_clusters.clusters
-        self.octoclusters = pc_clusters.octoclusters
-        self.octobase = pc_clusters.octobase
-        self.possible_octobase = pc_clusters.possible_octobase
-        self.base_z = pc_clusters.base_z
-        self.save_world()
+      for pt in pc_clusters.octobase:
+        if not pt_in_lst(pt, self.octobase):
+          self.octobase.append(pt)
+      # in world, possible_octobase
+      for poss_ob in pc_clusters.possible_octobase:
+        for pt in pc_clusters.clusters[poss_ob].cluster['shape']:
+          if not pt_in_lst(pt, self.octobase) and not pt_in_lst(pt, self.w_poss_base_pts):
+            self.w_poss_base_pts.append(pt)
 
-    def did_cluster_move(c_id):
+      # compare over time
+      print("copy over pc clusters")
+      self.base_z                = pc_clusters.base_z
+      # should evaluate how base has changed over time
+
+      #########################
+      # Move SPLIT/COMBINE to integrate?
+      ####
+      # COMBINE
+      ####
+      pc_poss_base = tuple(pc_c_id for pc_c_id in pc_clusters.possible_octobase)
+      seen = {}
+      w_sum = {}
+      dup_match = {}
+      for w_c_id, pc_c_id in enumerate(self.w_best_match):
+        if pc_c_id == None:
+          continue
+        if pc_c_id in pc_poss_base:
+          # skip if part of base?
+          continue
+        if pc_c_id not in seen:
+          seen[pc_c_id] = [w_c_id]
+          w_sum[pc_c_id] = 0
+          if self.obb_w_pc_pct_ovlp[w_c_id][pc_c_id] != None:
+            w_sum[pc_c_id] += self.obb_w_pc_pct_ovlp[w_c_id][pc_c_id]
+        else:
+          if len(seen[pc_c_id]) >= 1:
+            seen[pc_c_id].append(w_c_id)
+            if self.obb_w_pc_pct_ovlp[w_c_id][pc_c_id] != None:
+              w_sum[pc_c_id] += self.obb_w_pc_pct_ovlp[w_c_id][pc_c_id]
+        
+      for pc_c_id in seen:
+        if len(seen[pc_c_id]) > 1 and w_sum < 1:
+          for w_c_id in seen[pc_c_id]:
+            print("pretty confident that ", w_c_id, " is split of ", pc_c_id)
+            if self.clusters[w_c_id].cluster['type'] == 'MULTI_OBJECT':
+              self.clusters[w_c_id].cluster['status'] ='INACTIVE'
+              for r_id, [r, w_id] in enumerate(self.clusters[w_c_id].cluster['relation']):
+                if r == "IS_PART_OF":
+                  del self.clusters[w_id].cluster['relation'][r_id]
+                  self.clusters[w_id].cluster['status'] ='ACTIVE'
+                  break
+              print("pc", pc_c_id, " splits into w ", seen[pc_c_id])
+
+      ####
+      # SPLIT
+      ####
+      # multiple pc_c_id map to same w_c_id
+      w_poss_base = tuple(w_c_id for w_c_id in self.possible_octobase)
+      seen = {}
+      pc_sum = {}
+      dup_match = {}
+      for pc_c_id, w_c_id in enumerate(self.pc_best_match):
+        if w_c_id == None:
+          continue
+        if w_c_id in w_poss_base:
+          continue
+        if w_c_id not in seen:
+          seen[w_c_id] = [pc_c_id]
+          pc_sum[w_c_id] = 0
+          if self.obb_pc_w_pct_ovlp[pc_c_id][w_c_id] != None:
+            pc_sum[w_c_id] += self.obb_pc_w_pct_ovlp[pc_c_id][w_c_id]
+        else:
+          if len(seen[w_c_id]) >= 1:
+            seen[w_c_id].append(pc_c_id)
+            if self.obb_pc_w_pct_ovlp[pc_c_id][w_c_id] != None:
+              pc_sum[w_c_id] += self.obb_pc_w_pct_ovlp[pc_c_id][w_c_id]
+        
+      for w_c_id in seen:
+        if len(seen[w_c_id]) > 1 and pc_sum < 1:
+          for pc_c_id in seen[w_c_id]:
+            print("pretty confident that ", pc_c_id, " is combo of ", seen[w_c_id])
+            pc_clusters.clusters[pc_c_id].cluster['status'] ='UNKNOWN'
+            pc_clusters.clusters[pc_c_id].cluster['relation'].append(['IS_PART_OF', w_c_id])
+          self.clusters[w_c_id].cluster['status'] ='ACTIVE'
+          self.clusters[w_c_id].cluster['type'] ='MULTI_OBJECT'
+          self.clusters[w_c_id].cluster['relation'].append(['CONSISTS_OF', seen[w_c_id]])
+
+      #########################
+      # copy over relevant pc state
+      #########################
+
+      for w_c_id, pc_bm in enumerate(self.w_best_match):
+        if pc_bm == None:
+          continue
+        if pc_bm in pc_clusters.possible_octobase:
+          continue
+        # store the latest top-level pc_clusters info
+        self.clusters[w_c_id].cluster['shape'] = pc_clusters.clusters[pc_bm].cluster['shape']
+        self.clusters[w_c_id].cluster['obb'] = pc_clusters.clusters[pc_bm].cluster['obb']
+        self.clusters[w_c_id].cluster['centroid'] = pc_clusters.clusters[pc_bm].cluster['centroid']
+        self.clusters[w_c_id].cluster['center'] = pc_clusters.clusters[pc_bm].cluster['center']
+        self.clusters[w_c_id].cluster['location'] = pc_clusters.clusters[pc_bm].cluster['location']
+        flat_seg = self.clusters[w_c_id].find_attr('shape_attr','flat_pc')
+        if flat_seg != None:
+          self.clusters[w_c_id].set_attr('shape_attr','flat_pc',flat_seg)
+      
+        # TODO:
+        # compute the attribute-level w_clusters info
+        # cent_mean, cent_stddev = self.get_mean_stddev(c_id,'obb_attr',"CENTROID_STATS")
+        # cent_val = pc_cluster['obb'].centroid
+        # # if unmoved, computed mean and variance centroid
+        # for c_v in zip(c1, c2):
+        #   cent_prob = scipy.stats.norm(cent_mean, cent_stddev).pdf(c_v)
+        # # rotation changes when moved
+        # # if unmoved, computed mean and stddev centroid
+        # rot_mean, rot_stddev = self.get_mean_stddev(c_id,'obb_attr',"ROTATION_STATS")
+        # rot_val = pc_cluster['obb'].rotation
+
+      for pc_um in self.pc_unmatched:
+        if pc_um in pc_clusters.possible_octobase:
+          continue
+        # append new cluster
+        n = len(self.clusters)
+        clust = pc_clusters.clusters[pc_um]
+        clust.id = len(self.clusters)
+        clust.cluster['status'] = 'ACTIVE'
+        clust.cluster['id'] = n
+        self.clusters.append(clust)
+
+      for wc_um in enumerate(self.w_unmatched):
+        # mark cluster inactive
+        self.clusters[wc_um].cluster['status'] = 'UNKNOWN'
+
+      self.w_active_list = [w_c_id for w_c_id,w_c in enumerate(self.clusters) if w_c.cluster['status'] == 'ACTIVE']
+      self.w_expected_num_clusters = 0
+      self.save_world()
+
+    # 2nd attempt to make a cluster based upon a subset of the octocluster.
+    # The goal is to derive a cluster that is comparible to the world cluster.
+    # unfortunately, the results do not seem promising. Better to skip for now
+    # and do a comparison to the parked cluster. 
+    def did_cluster_move(self, octomap, c_id, w_clusters):
         # compare pre-move octomap to post-grab octomap (with arm hovering above
         # cluster). Is this particular object there?
         # ARD: TODO
-        return False
+        w_obb = w_clusters.clusters[c_id].cluster['obb']
+        w_center = w_clusters.clusters[c_id].cluster['center']
+        w_cid_sz = len(w_clusters.clusters[c_id].cluster['shape'])
+        # ARD DEBUG
+        # approx_octomap = [pt for pt_cnt,pt in enumerate(octomap) if OBB.in_obb(w_obb, pt)[0] and pt_cnt < 5]
+        # return False
+        approx_octomap = [pt for pt in octomap if OBB.in_obb(w_obb, [pt[0],pt[1],pt[2]])[0]]
+        approx_octoclusters_pc = [pt for pt in approx_octomap if w_clusters.base_z[get_sector(pt[0], pt[1])] > pt[2]]
+        approx_octobase = [pt for pt in approx_octomap if w_clusters.base_z[get_sector(pt[0], pt[1])] <= pt[2]]
+        print("did_cluster_mv:", len(approx_octoclusters_pc), len(approx_octobase), len(approx_octomap))
+        octoclust = self.analyze_octoclusters(approx_octoclusters_pc, approx_octobase, approx_octomap)
+        c_center = None
+        for c_id, c in enumerate(octoclust):
+          if abs(len(octoclust[c_id]) - w_cid_sz ) > .1 * w_cid_sz:
+            continue
+          counter = 0
+          running_sum = np.array([0.0, 0.0, 0.0, 0.0])
+          for pnt in octoclust[c_id]:
+            counter += 1
+            running_sum += pnt
+          c_center = running_sum / counter
+          if distance_3d(c_center, w_center) < 2.1 * OCTOMAP_RESOLUTION:
+            print("cluster did not move", c_id, distance_3d(c_center, w_center))
+            return False
+        if c_center == None:
+          print("no matching cluster. assuming moved.")
+        else:
+          print("cluster moved", c_id, distance_3d(c_center, w_center))
+        return True
 
     # integrates temporary "pc cluster" into persistent "world" cluster
+    # Now that the integration has morphed into pc->w and w->pc, the
+    # following should become a procedure score_cluster(cl1,cl2) and
+    # called for (pc,w) and (w,pc)
     def integrate_current_pc_into_world(self, pc_clusters):
       if self.world_state == 'UNINITIALIZED' or len(self.clusters) == 0:
-        self.copy_curr_pc_to_world_state(pc_clusters)
+        self.initialize_world(pc_clusters)
         self.world_state = 'ANALYZE PLAYGROUND' 
         return
       # compare PC to world clusters
@@ -148,14 +364,23 @@ class WorldState:
       # multiple clusters combined or split...
       obb_pct_matching_clusters = [[] for i, w_c in enumerate(self.clusters)]
       obb_w_pc_pct_ovlp = [[] for i, w_c in enumerate(self.clusters)]
-      obb_pc_w_pct_ovlp = [[] for i, w_c in enumerate(self.clusters)]
+      obb_pc_w_pct_ovlp = [[] for i, pc_c in enumerate(pc_clusters.clusters)]
       obb_ovlp_cnt = [0 for i, w_c in enumerate(self.clusters)]
       obb_vol_match = [[] for i, w_c in enumerate(self.clusters)]
+
+      pc_centroid_matching_clusters = [None for pc_c_id, pc_c in enumerate(pc_clusters.clusters)]
+      pc_centroid_min_dist = [BIGNUM for pc_c_id, pc_c in enumerate(pc_clusters.clusters)]
+      pc_centroid_min_clust_dist = [BIGNUM for pc_c_id, pc_c in enumerate(pc_clusters.clusters)]
+      pc_obb_pct_matching_clusters = [[] for i, pc_c in enumerate(pc_clusters.clusters)]
+      pc_obb_ovlp_cnt = [0 for i, pc_c in enumerate(pc_clusters.clusters)]
+      pc_obb_vol_match = [[] for i, pc_c in enumerate(pc_clusters.clusters)]
 
       # Do compare of current PC to each cluster
       for pc_c_id, pc_c in enumerate(pc_clusters.clusters):
         # world
         for w_c_id, w_c in enumerate(self.clusters):
+          if not self.active(w_c_id):
+            continue
           ##############
           # Compare Centroid/Cluster distance
           ##############
@@ -165,6 +390,11 @@ class WorldState:
             centroid_matching_clusters[w_c_id] = pc_c_id
             centroid_min_dist[w_c_id] = centroid_dist
             centroid_min_clust_dist[w_c_id] = clust_dist
+          if pc_centroid_min_dist[pc_c_id] > centroid_dist:
+            # pc_centroid_matching_clusters[pc_c_id] = pc_c_id
+            pc_centroid_matching_clusters[pc_c_id] = w_c_id
+            pc_centroid_min_dist[pc_c_id] = centroid_dist
+            pc_centroid_min_clust_dist[pc_c_id] = clust_dist
 
           ##############
           # Compare OBB overlap based upon actual position
@@ -174,11 +404,15 @@ class WorldState:
           if clust_dist <= 0: 
             w_pc_obb_pct_ovlp, pc_w_obb_pct_ovlp = self.compare_bounding_box(w_c_id, pc_c)
             if w_pc_obb_pct_ovlp == None or pc_w_obb_pct_ovlp == None:
-              pass
+              obb_pct_matching_clusters[w_c_id].append(pc_c_id)
+              obb_w_pc_pct_ovlp[w_c_id].append(None)
+              obb_pc_w_pct_ovlp[pc_c_id].append(None)
+              pc_obb_pct_matching_clusters[pc_c_id].append(w_c_id)
             else:
               obb_pct_matching_clusters[w_c_id].append(pc_c_id)
               obb_w_pc_pct_ovlp[w_c_id].append(w_pc_obb_pct_ovlp)
-              obb_pc_w_pct_ovlp[w_c_id].append(pc_w_obb_pct_ovlp)
+              obb_pc_w_pct_ovlp[pc_c_id].append(pc_w_obb_pct_ovlp)
+              pc_obb_pct_matching_clusters[pc_c_id].append(w_c_id)
 
             # indicator that we should combine clusters
             if w_pc_obb_pct_ovlp > .70 or pc_w_obb_pct_ovlp > .70:
@@ -194,10 +428,19 @@ class WorldState:
             pc_vol = OBB.obb_volume(pc_obb)
             if w_vol != None and pc_vol != None:
               obb_vol_match[w_c_id].append(w_vol / pc_vol)
+              pc_obb_vol_match[pc_c_id].append(w_vol / pc_vol)
             else:
               # vol match is near 1, No match near 0.
               print("None w or pc obb vol:", w_vol, pc_vol)
               obb_vol_match[w_c_id].append(0)
+              pc_obb_vol_match[pc_c_id].append(0)
+          else:
+              obb_pct_matching_clusters[w_c_id].append(pc_c_id)
+              obb_w_pc_pct_ovlp[w_c_id].append(None)
+              obb_pc_w_pct_ovlp[pc_c_id].append(None)
+              pc_obb_pct_matching_clusters[pc_c_id].append(w_c_id)
+              obb_vol_match[w_c_id].append(0)
+              pc_obb_vol_match[pc_c_id].append(0)
 
         ##############
         # shape_prob = self.compare_shapes(w_c_id, pc_c)
@@ -232,11 +475,15 @@ class WorldState:
       # Validation 
       # verification checks: are the matches consistent across the tests and clusters
       #####################################
-      pc_match = [[] for i, pc_c in enumerate(pc_clusters.clusters)]
       w_match  = [[] for i, w_c in enumerate(self.clusters)]
-      score    = [[] for i,w_c in enumerate(self.clusters)]
+      w_score    = [[] for i,w_c in enumerate(self.clusters)]
       w_test   = [[] for i,w_c in enumerate(self.clusters)]
       w_best_match  = [None for i, w_c in enumerate(self.clusters)]
+
+      pc_match = [[] for i, pc_c in enumerate(pc_clusters.clusters)]
+      pc_score    = [[] for i,w_c in enumerate(pc_clusters.clusters)]
+      pc_test   = [[] for i,w_c in enumerate(pc_clusters.clusters)]
+      pc_best_match  = [None for i, w_c in enumerate(pc_clusters.clusters)]
 
       ERR_MARGIN = 0.1
       ##############
@@ -245,39 +492,77 @@ class WorldState:
       diff_cnt = len(self.clusters) - len(pc_clusters.clusters)
 
       for w_c_id, w_c in enumerate(self.clusters):
+        if not self.active(w_c_id):
+            continue
         # whether same cluster, or if moved
         cent_match      = centroid_matching_clusters[w_c_id]
         cent_dist       = centroid_min_dist[w_c_id]
         cent_clust_dist = centroid_min_clust_dist[w_c_id]
         score_cent = 0 
-        if cent_dist < 2 * OCTOMAP_RESOLUTION and cent_clust_dist < 0: 
+        if cent_dist < 2.1 * OCTOMAP_RESOLUTION and cent_clust_dist < 0: 
           score_cent = 100 
           w_test[w_c_id].append('cent')
         elif cent_clust_dist < 0: 
           # potential minor move
           w_test[w_c_id].append('cent_dist')
-          score_cent = 75 / (1 + cent_dist)
+          score_cent = 75 / abs(1 + cent_dist)
         # else: potentially a major move; identified later
         if score_cent > 0:
-          score[w_c_id].append(score_cent)
+          w_score[w_c_id].append(score_cent)
           w_match[w_c_id].append(cent_match)
+
+      for pc_c_id, pc_c in enumerate(pc_clusters.clusters):
+        # whether same cluster, or if moved
+        pc_cent_match      = pc_centroid_matching_clusters[pc_c_id]
+        pc_cent_dist       = pc_centroid_min_dist[pc_c_id]
+        pc_cent_clust_dist = pc_centroid_min_clust_dist[pc_c_id]
+        score_cent = 0
+        if pc_cent_dist < 2.1 * OCTOMAP_RESOLUTION and pc_cent_clust_dist < 0:
+          pc_score_cent = 100
+          pc_test[pc_c_id].append('pc_cent')
+        elif pc_cent_clust_dist < 0:
+          # potential minor move
+          pc_test[pc_c_id].append('pc_cent_dist')
+          pc_score_cent = 75 / (1 + pc_cent_dist)
+        # else: potentially a major move; identified later
+        if pc_score_cent > 0:
+          pc_score[pc_c_id].append(pc_score_cent)
+          pc_match[pc_c_id].append(pc_cent_match)
+
 
       ##############
       # OBB with same volume 
       # (location independent)
       ##############
       for w_c_id, w_c in enumerate(self.clusters):
+        if not self.active(w_c_id):
+            continue
         if w_c_id in self.possible_octobase:
           continue
         same_vol = []
-        for pc_c_id, pc_c in enumerate(pc_clusters.clusters):
+        for pc_c_id in obb_pct_matching_clusters[w_c_id]:
           if abs(obb_vol_match[w_c_id][pc_c_id] - 1) < ERR_MARGIN:
             same_vol.append(pc_c_id)
         for i in range(len(same_vol)):
           # 100 split among matches
           w_test[w_c_id].append('obb_vol')
-          score[w_c_id].append(100 / len(same_vol))
+          w_score[w_c_id].append(100 / len(same_vol))
           w_match[w_c_id].append(same_vol[i])
+
+      for pc_c_id, pc_c in enumerate(pc_clusters.clusters):
+        if pc_c_id in self.possible_octobase:
+          continue
+        same_vol = []
+        for w_c_id in pc_obb_pct_matching_clusters[pc_c_id]:
+          if not self.active(w_c_id):
+            continue
+          if abs(obb_vol_match[w_c_id][pc_c_id] - 1) < ERR_MARGIN:
+            same_vol.append(w_c_id)
+        for i in range(len(same_vol)):
+          # 100 split among matches
+          pc_test[pc_c_id].append('obb_vol')
+          pc_score[pc_c_id].append(100 / len(same_vol))
+          pc_match[pc_c_id].append(same_vol[i])
 
       ##############
       # OBB that subsumes another
@@ -285,76 +570,160 @@ class WorldState:
       ##############
       # One OBB is consumed by another (cleanup of clusters)
       for w_c_id, w_c in enumerate(self.clusters):
+        if not self.active(w_c_id):
+            continue
         if w_c_id in self.possible_octobase:
           continue
         for pc_offset, pc_c_id in enumerate(obb_pct_matching_clusters[w_c_id]):
-          if (obb_w_pc_pct_ovlp[w_c_id][pc_offset] - 1) < ERR_MARGIN:
+          # print("w_c_id,pc_c_id, len obb_pct_match:", w_c_id, pc_c_id, len(obb_pct_matching_clusters), len(obb_pct_matching_clusters[w_c_id]))
+          if obb_w_pc_pct_ovlp[w_c_id][pc_c_id] == None or obb_pc_w_pct_ovlp[pc_c_id][w_c_id] == None:
+            w_test[w_c_id].append('obb_pct_none')
+            w_score[w_c_id].append(0)
+            w_match[w_c_id].append(pc_c_id)
+          elif abs(obb_w_pc_pct_ovlp[w_c_id][pc_c_id] - 1) < ERR_MARGIN:
             w_test[w_c_id].append('obb_pct1')
-            score[w_c_id].append(100)
+            w_score[w_c_id].append(100)
             w_match[w_c_id].append(pc_c_id)
-          elif (obb_pc_w_pct_ovlp[w_c_id][pc_offset] - 1) < ERR_MARGIN:
+          elif abs(obb_pc_w_pct_ovlp[pc_c_id][w_c_id] - 1) < ERR_MARGIN:
             w_test[w_c_id].append('obb_pct2')
-            score[w_c_id].append(100)
+            w_score[w_c_id].append(100)
             w_match[w_c_id].append(pc_c_id)
-          elif (obb_w_pc_pct_ovlp[w_c_id][pc_offset] > 0 and
-                obb_pc_c_pct_ovlp[w_c_id][pc_offset] > 0 ):
+          elif (obb_w_pc_pct_ovlp[w_c_id][pc_c_id] > 0 and
+                obb_pc_w_pct_ovlp[pc_c_id][w_c_id] > 0 ):
             w_test[w_c_id].append('obb_pct3')
-            score[w_c_id].append(50 * max(obb_w_pc_pct_ovlp[w_c_id][pc_offset], obb_pc_c_pct_ovlp[w_c_id][pc_offset]))
+            w_score[w_c_id].append(50 * min(1,max(obb_w_pc_pct_ovlp[w_c_id][pc_c_id], obb_pc_w_pct_ovlp[pc_c_id][w_c_id])))
             w_match[w_c_id].append(pc_c_id)
+            if obb_w_pc_pct_ovlp[w_c_id][pc_c_id] > 1 or obb_pc_w_pct_ovlp[pc_c_id][w_c_id] > 1:
+              print("obb_w_pc_pct_ovlp, pc_w: ", obb_w_pc_pct_ovlp[w_c_id][pc_c_id], obb_pc_w_pct_ovlp[pc_c_id][w_c_id], w_c_id, pc_c_id)
+          else:
+            w_test[w_c_id].append('obb_pct_zero')
+            w_score[w_c_id].append(0)
+            w_match[w_c_id].append(pc_c_id)
+
+      for pc_c_id, pc_c in enumerate(pc_clusters.clusters):
+        if pc_c_id in pc_clusters.possible_octobase:
+          continue
+        for pc_offset, w_c_id in enumerate(pc_obb_pct_matching_clusters[pc_c_id]):
+          # print("w_c_id,pc_c_id, len pc_obb_pct_match:", w_c_id, pc_c_id, len(pc_obb_pct_matching_clusters), len(pc_obb_pct_matching_clusters[pc_c_id]))
+          if obb_w_pc_pct_ovlp[w_c_id][pc_c_id] == None or obb_pc_w_pct_ovlp[pc_c_id][w_c_id] == None:
+            pc_test[pc_c_id].append('pc_obb_pct_none')
+            pc_score[pc_c_id].append(0)
+            pc_match[pc_c_id].append(w_c_id)
+          elif (obb_w_pc_pct_ovlp[w_c_id][pc_c_id] - 1) < ERR_MARGIN:
+            pc_test[pc_c_id].append('pc_obb_pct1')
+            pc_score[pc_c_id].append(100)
+            pc_match[pc_c_id].append(w_c_id)
+          elif (obb_pc_w_pct_ovlp[pc_c_id][w_c_id] - 1) < ERR_MARGIN:
+            pc_test[pc_c_id].append('pc_obb_pct2')
+            pc_score[pc_c_id].append(100)
+            pc_match[pc_c_id].append(w_c_id)
+          elif (obb_w_pc_pct_ovlp[w_c_id][pc_c_id] > 0 and
+                obb_pc_w_pct_ovlp[pc_c_id][w_c_id] > 0 ):
+            pc_test[pc_c_id].append('pc_obb_pct3')
+            pc_score[pc_c_id].append(50 * min(1, max(obb_w_pc_pct_ovlp[w_c_id][pc_c_id], obb_pc_w_pct_ovlp[pc_c_id][w_c_id])))
+            pc_match[pc_c_id].append(w_c_id)
+          else:
+            pc_test[pc_c_id].append('pc_obb_pct_zero')
+            pc_score[pc_c_id].append(0)
+            pc_match[pc_c_id].append(w_c_id)
 
       ##############
       # Evaluate unmoved or slightly moved clusters
       ##############
       # Note: if w_c_id and pc_c_id match the above tests, we're pretty certain
       # these are the same objects.
-      perfect_match_cnt = 0
+      unmoved_match = []
+      moved_match = []
+      slightly_moved_match = []
       best_match_cnt = 0
-      poss_base_cnt = 0
+      poss_base_cnt  = 0
+      poss_base = []
       for w_c_id, w_c in enumerate(self.clusters):
+        if not self.active(w_c_id):
+            continue
         if w_c_id in self.possible_octobase:
-          poss_base_cnt += 1
+          poss_base.append(w_c_id)
           continue
-        if len(score[w_c_id]) >= 3 and score[w_c_id][0] == 100 and score[w_c_id][1] == 100 and score[w_c_id][2] == 100:
+        if len(w_score[w_c_id]) >= 3 and w_score[w_c_id][0] == 100 and w_score[w_c_id][1] == 100 and w_score[w_c_id][2] == 100:
           w_best_match[w_c_id] = w_match[w_c_id][0]
-          if not w_best_match[w_c_id] in pc_clusters.possible_base:
-            print("perfect match:", w_c_id, w_match[w_c_id][0])
-            perfect_match_cnt += 1
+          if not w_best_match[w_c_id] in pc_clusters.possible_octobase:
+            print("unmoved match:", w_c_id, w_match[w_c_id][0])
+            unmoved_match.append(w_c_id) # pc side is w_match[w_c_id]
           else:
-            poss_base_cnt += 1
-        elif len(score[w_c_id]) >= 2:
-          # if w_c_id < 10 or w_c_id % 10 == 0:
-          #   print(w_c_id, "test :", w_test[w_c_id])
-          #   print(w_c_id, "score:", score[w_c_id])
-          #   print(w_c_id, "match:", w_match[w_c_id])
-          potential_pc       = []
-          potential_pc_score = []
-          for pc_idx,pc_id in enumerate(set(w_match[w_c_id])):
-            potential_pc.append(pc_id)
-            potential_pc_score.append(0)
-            for t_idx, t in enumerate(w_test[w_c_id]):
-              # t_idx == pc_idx
-              # print("s, w_m:",  score[w_c_id], len(w_match[w_c_id]))
-              # print("len  s, w_m:",  len(score[w_c_id]), len(w_match[w_c_id]))
-              for s in range(len(score[w_c_id])):
+            poss_base.append(w_c_id)
+        elif len(w_score[w_c_id]) >= 2:
+          potential_pc       = [pc_id for pc_id in set(w_match[w_c_id])]
+          potential_pc_score = [0     for pc_id in potential_pc] 
+          # print("w_match", w_c_id, len(w_match[w_c_id]), w_match[w_c_id])
+          # print("w_score", w_c_id, len(w_score[w_c_id]), w_score[w_c_id])
+          for pc_idx,pc_id in enumerate(potential_pc):
+            for s_i, s in enumerate(w_score[w_c_id]):
+              if w_match[w_c_id][s_i] == pc_id:
                 potential_pc_score[pc_idx] += s 
-                # potential_pc_score[pc_idx] += score[w_c_id] / len(w_match[w_c_id][t_idx])
           best_score  = 0
-          best_pc_idx = 0
+          best_pc_idx = None
           for i in range(len(potential_pc_score)):
             if best_score < potential_pc_score[i]:
               best_score = potential_pc_score[i]
               best_pc_idx = i
-          w_best_match[w_c_id] = potential_pc[best_pc_idx]
-          if not w_best_match[w_c_id] in pc_clusters.possible_base:
-            print("best match:", w_c_id, w_best_match[w_c_id], best_score)
-            best_match_cnt += 1
-          else:
-            poss_base_cnt += 1
-      print("Unmoved clusters:")`
-      print("  perfect_match_cnt: ", perfect_match_cnt)
-      print("  best_match_cnt   : ", best_match_cnt)
-      print("  poss_base_cnt    : ", poss_base_cnt)
+          if best_pc_idx != None:
+            w_best_match[w_c_id] = potential_pc[best_pc_idx]
+            slightly_moved_match.append(w_c_id)
+            if not w_best_match[w_c_id] in pc_clusters.possible_octobase:
+              print("w best match:", w_c_id, w_best_match[w_c_id], best_score)
+              best_match_cnt += 1
+            else:
+              poss_base_cnt += 1
+      print("Unmoved clusters:")
+      print("  unmoved_match       : ", unmoved_match)
+      print("  slightly_moved_match: ", slightly_moved_match)
+      print("  best_match_cnt      : ", best_match_cnt)
+      print("  poss_base           : ", poss_base)
 
+      ##############
+      # Note: if w_c_id and pc_c_id match the above tests, we're pretty certain
+      # these are the same objects.
+      pc_unmoved_match = []
+      pc_slightly_moved_match = []
+      pc_best_match_cnt = 0
+      pc_poss_base_cnt = 0
+      for pc_c_id, pc_c in enumerate(pc_clusters.clusters):
+        if pc_c_id in pc_clusters.possible_octobase:
+          pc_poss_base_cnt += 1
+          continue
+        if len(pc_score[pc_c_id]) >= 3 and pc_score[pc_c_id][0] == 100 and pc_score[pc_c_id][1] == 100 and pc_score[pc_c_id][2] == 100:
+          pc_best_match[pc_c_id] = pc_match[pc_c_id][0]
+          if not pc_best_match[pc_c_id] in pc_clusters.possible_octobase:
+            print("pc_perfect match:", pc_c_id, pc_match[pc_c_id][0])
+            pc_unmoved_match.append(pc_c_id)
+          else:
+            pc_poss_base_cnt += 1
+        elif len(pc_score[pc_c_id]) >= 2:
+          potential_w       = []
+          potential_w_score = []
+          for w_idx,w_id in enumerate(set(pc_match[pc_c_id])):
+            potential_w.append(w_id)
+            potential_w_score.append(0)
+            for s in range(len(pc_score[pc_c_id])):
+              potential_pc_score[pc_idx] += s 
+          best_score  = 0
+          best_w_idx = 0
+          for i in range(len(potential_w_score)):
+            if best_score < potential_w_score[i]:
+              best_score = potential_w_score[i]
+              best_w_idx = i
+          pc_best_match[pc_c_id] = potential_w[best_w_idx]
+          if not pc_best_match[pc_c_id] in self.possible_octobase:
+            print("pc best match:", pc_c_id, pc_best_match[pc_c_id], best_score)
+            pc_best_match_cnt += 1
+            pc_slightly_moved_match.append(pc_c_id)
+          else:
+            pc_poss_base_cnt += 1
+      print("Unmoved clusters:")
+      print("  pc_unmoved_match       : ", pc_unmoved_match)
+      print("  pc_slightly_moved_match: ", pc_slightly_moved_match)
+      print("  pc_best_match_cnt      : ", pc_best_match_cnt)
+      print("  pc_poss_base_cnt       : ", pc_poss_base_cnt)
 ###############
 # Need to copy over non-base perfect and best clusters to world state.
 #          -> moved and unmatched clusters computed below
@@ -370,82 +739,99 @@ class WorldState:
 # Since octobase can't be used as an optimization next frame, don't need to
 # compute the rest?
 ###############
-#      ##############
-#      # Combine octobases
-#      ##############
-#      pre_len = len(self.octobase)
-#      # self.octobase = self.octobase + list(pc_clusters.octobase - self.octobase)
-#      self.octobase = np.concatenate((self.octobase, np.array([p for p in pc_clusters.octobase if not pt_in_lst(p, self.octobase)])))
-#      if len(self.octobase) > pre_len:
-#        print("Points added to octobase:", (len(self.octobase) - pre_len))
-#
-#      ##############
-#      # Combine possible pc & master octobases
-#      ##############
-#      prev_match_w = -1
-#      for w_c_id in self.possible_octobase:
-#        # combine w_c_id with overlapping pc_c_id that are possible base
-#        combined = False
-#        for pc_c_id in pc_clusters.possible_octobase:
-#          if pc_c_id in obb_pct_matching_clusters[w_c_id]:
-#            self.clusters[w_c_id].cluster['shape'].append(pc_clusters.clusters[pc_c_id].cluster['shape'])
-#            pc_clusters.clusters[pc_c_id].cluster['shape'] = []
-#            w_best_match[w_c_id] = pc_c_id
-#            print("combined potential bases: ", w_c_id, pc_c_id, len(self.clusters))
-#            prev_match_w = w_c_id
-#            combined = True
+      ##############
+      # Combine octobases
+      ##############
+      pre_len = len(self.octobase)
+      # self.octobase = self.octobase + list(pc_clusters.octobase - self.octobase)
+      # ARD: takes too long
+      # self.octobase = np.concatenate((self.octobase, np.array([p for p in pc_clusters.octobase if not pt_in_lst(p, self.octobase)])))
+      # tuple_of_tuples = tuple(tuple(x) for x in list_of_lists)
+      # a = set(list(pc_clusters.octobase))
+      pc_base_tuples = tuple(tuple(pt) for pt in pc_clusters.octobase)
+      w_base_tuples  = tuple(tuple(pt) for pt in self.octobase)
+      set_dif = set(pc_base_tuples).difference(w_base_tuples)
+      self.octobase = w_base_tuples + tuple(set_dif)
+      # self.octobase = np.concatenate((self.octobase, np.array(set(list(pc_clusters.octobase)).difference(list(self.octobase)))))
+      if len(self.octobase) > pre_len:
+        print("Points added to octobase:", (len(self.octobase) - pre_len))
+
+      ##############
+      # Combine possible pc & master octobases
+      ##############
+      prev_match_w = -1
+      for w_c_id in self.possible_octobase:
+        # combine w_c_id with overlapping pc_c_id that are possible base
+        combined = False
+        for pc_c_id in pc_clusters.possible_octobase:
+          if pc_c_id in obb_pct_matching_clusters[w_c_id]:
+            for pt in pc_clusters.clusters[pc_c_id].cluster['shape']:
+              if pt not in self.clusters[w_c_id].cluster['shape']:
+                self.clusters[w_c_id].cluster['shape'].append(pt)
+            self.clusters[w_c_id].cluster['status'] = "BASE"
+            pc_clusters.clusters[pc_c_id].cluster['shape'] = []
+            pc_clusters.clusters[pc_c_id].cluster['status'] = "EMPTY"
+            w_best_match[w_c_id] = pc_c_id
+            print("combined potential bases: ", w_c_id, pc_c_id, len(self.clusters[w_c_id].cluster['shape']))
+            prev_match_w = w_c_id
+            combined = True
 #        if len(self.octobase) > pre_len:
 #          if combined:
 #            self.clusters[w_c_id].compute_bounding_box()
-#          # combine w_c_id with other overlapping world clusters that are possible base
-#          combined = False
-#        for w_c_id2 in self.possible_octobase:
-#          if w_c_id != wc_id2:
-#            obb1 = self.clusters[w_c_id].cluster['obb']
-#            obb2 = self.clusters[w_c_id2].cluster['obb']
-#            if obb1 != None and obb2 != None:
-#              ovlp1, ovlp2 = self.get_pct_overlap(w_obb1, w_obb2)
-#              if ovlp1 != None and ovlp2 != None:
-#                self.clusters[w_c_id].cluster['shape'].append(self.clusters[w_c_id2].cluster['shape'])
-#                self.clusters[w_c_id2].cluster['shape'] = []
-#                w_best_match[w_c_id2] = -1
-#                print("combined potential w_bases: ", w_c_id, w_c_id2)
-#                w_best_match[w_c_id2] = None
-#                combined = True
-#        # both w_c_id and octobase may have changed. Remove duplicates from w_c_id.
-#        b4_len = len(self.clusters[w_c_id])
-#        # self.clusters[w_c_id] = self.clusters[w_c_id] - self.octobase
-#        if combined or b4_len != len(self.clusters[w_c_id]):
-#          self.clusters[w_c_id].compute_bounding_box()
-
+          # combine w_c_id with other overlapping world clusters that are possible base
+        combined2 = False
+        for w_c_id2 in self.possible_octobase:
+          if w_c_id != w_c_id2:
+            obb1 = self.clusters[w_c_id].cluster['obb']
+            obb2 = self.clusters[w_c_id2].cluster['obb']
+            if obb1 != None and obb2 != None:
+              ovlp1, ovlp2 = self.get_pct_overlap(obb1, obb2)
+              if ovlp1 != None and ovlp2 != None:
+                for pt in self.clusters[w_c_id2].cluster['shape']:
+                  if pt not in self.clusters[w_c_id].cluster['shape']:
+                    self.clusters[w_c_id].cluster['shape'].append(pt)
+                # self.clusters[w_c_id].cluster['shape'].append(self.clusters[w_c_id2].cluster['shape'])
+                self.clusters[w_c_id].cluster['status'] = "BASE"
+                self.clusters[w_c_id2].cluster['shape'] = []
+                self.clusters[w_c_id2].cluster['status'] = "EMPTY"
+                print("combined potential w_bases: ", w_c_id, w_c_id2)
+                w_best_match[w_c_id2] = None
+                combined2 = True
+        # both w_c_id and octobase may have changed. Remove duplicates from w_c_id.
+        if combined or combined2:
+          self.clusters[w_c_id].compute_bounding_box()
 
       ##############
       # successful pick/drop
       ##############
-      print("prev target info:", self.prev_target_w_cluster, self.prev_target_w_grip, self.prev_target_action)
+      print("prev target info:", self.prev_target_w_cluster, self.prev_target_w_grasp, self.prev_target_action)
 
       ##############
       # Likely cluster big move (push or unsuccessful pickup/drop)
       ##############
       # look for clusters with same volume.
       # may have multiple clusters of the same shape & size.
+      min_dist = None
       for w_c_id, w_c in enumerate(self.clusters):
+        if not self.active(w_c_id):
+            continue
         if w_best_match[w_c_id] != None:
           # already know that the cluster is unmoved
           continue
         # pc_c_id's with same volumes (previously computed)
-        for t_offset, t in w_test[w_c_id]:
-          if t == 'obb_vol' and score[w_c_id][t_offset] == 100:
+        for t_offset, t in enumerate(w_test[w_c_id]):
+          if t == 'obb_vol' and w_score[w_c_id][t_offset] == 100:
             same_pc_vol = w_match[w_c_id][t_offset] 
         if len(same_pc_vol) == 1:
           # degenerate case. 
           w_best_match[w_c_id] = same_pc_vol[0]
+          moved_match.append(w_c_id)
           pc_c = pc_clusters.clusters[same_pc_vol[pc_id]]
           centroid_dist, clust_dist = self.cluster_approx_distance(w_c_id, pc_c)
           min_dist = centroid_dist
         else:
           # assign by distance
-          min_dist = 0
+          min_dist    = BIGNUM
           min_dist_pc = None
           for pc_id in same_pc_vol: 
             pc_c = pc_clusters.clusters[same_pc_vol[pc_id]]
@@ -454,10 +840,13 @@ class WorldState:
               min_dist = centroid_dist
               min_dist_pc = pc_id
           w_best_match[w_c_id] = min_dist_pc
+          moved_match.append(min_dist_pc)
 
       print("--------------")
       print("w_best_match: ", w_best_match)
       print("w_dist moved: ", min_dist)
+
+      # ARD: a while to next printout 
 
 
       ##############
@@ -467,10 +856,29 @@ class WorldState:
       # pc_unmatched should be copied over to the world and added to self.clusters
 
       # How many w/pc are now unmatched?
-      w_unmatched = [w_c_id for w_c_id, w_c in enumerate(self.clusters) if w_best_match[w_c_id] == None and w_c_id not in self.possible_octobase]
-      pc_unmatched = [pc_c_id for pc_c_id, pc_c in enumerate(pc_clusters.clusters) if pc_c_id not in w_best_match[:] and pc_c_id not in pc_clusters.possible_octobase]
+      pc_poss_base_tuples  = tuple(pc_c_id for pc_c_id in pc_clusters.possible_octobase)
+      pc_clust_tuples      = tuple(pc_c_id for pc_c_id,pc_c in enumerate(pc_clusters.clusters))
+      pc_clust_tuples2     = tuple(pc_c_id for pc_c_id,pc_c in enumerate(pc_clusters.clusters) if pc_best_match[pc_c_id] != None)
+      pc_best_match_tuples = tuple(pc_c_id for pc_c_id in w_best_match if pc_c_id != None)
 
-      if len(w_unmatched) >= 1 and len(pc_unmatched) >= 1:
+      # w_unmatched = [w_c_id for w_c_id, w_c in enumerate(self.clusters) if w_best_match[w_c_id] == None and w_c_id not in self.possible_octobase and self.active(w_c_id)]
+      w_poss_base_tuples  = tuple(w_c_id for w_c_id in self.possible_octobase)
+      w_unmatch_tuples  = tuple(w_c_id for w_c_id,pc_c_id in enumerate(w_best_match) if w_best_match[w_c_id] == None and self.active(w_c_id))
+      w_unmatched  = set(w_unmatch_tuples).difference(w_poss_base_tuples)
+
+      # pc_unmatched = [pc_c_id for pc_c_id, pc_c in enumerate(pc_clusters.clusters) if pc_c_id not in w_best_match[:] and pc_c_id not in pc_clusters.possible_octobase]
+      pc_unmatched = set(pc_clust_tuples).difference(pc_clust_tuples).difference(pc_poss_base_tuples)
+
+      # pc_unmatched2 = [pc_c_id for pc_c_id, pc_c in enumerate(pc_clusters.clusters) if pc_best_match[pc_c_id] and pc_c_id not in pc_clusters.possible_octobase]
+      pc_unmatched2 = set(pc_clust_tuples2).difference(pc_poss_base_tuples)
+      print("len of w_unmatched, pc_unmatched, pc_unmatched2:", len(w_unmatched),len(pc_unmatched), len(pc_unmatched2))
+
+      if len(w_unmatched) == 1 and len(pc_unmatched) == 1:
+        w_best_match[w_unmatched[0]] = pc_unmatched[0]
+        moved_match.append(w_unmatched[0])
+        w_unmatched = []
+        pc_unmatched = []
+      elif len(w_unmatched) >= 1 and len(pc_unmatched) >= 1:
         w_info = []
         for w_c_id in w_unmatched:
           w_obb = self.clusters[w_c_id].cluster['obb']
@@ -479,9 +887,14 @@ class WorldState:
         for pc_c_id in pc_unmatched:
           pc_obb = pc_clusters.clusters[pc_c_id].cluster['obb']
           pc_info.append([pc_c_id, OBB.obb_volume(pc_obb), pc_obb_centroid])
+        pc_info2 = []
+        for pc_c_id in pc_unmatched2:
+          pc_obb = pc_clusters.clusters[pc_c_id].cluster['obb']
+          pc_info2.append([pc_c_id, OBB.obb_volume(pc_obb), pc_obb_centroid])
         print("--------------")
         print("w_unmatched : ", w_info)
         print("pc_unmatched: ", pc_info)
+        print("pc2unmatched: ", pc_info2)
 
       ##############
       # possible combined octoclusters
@@ -507,18 +920,8 @@ class WorldState:
       ##############
       # Complete integration
       ##############
-      # keep current world octobase and possible_octobase
-      # and compute new possible_octobase every frame.
-      #   - greatly speeds up later frames? (no segmentation)
       # do an initial scan of new frame assuming most objects didn't move.
       # always do the full computation for target clusters. 
-      # use OBB from previous frame to count how many pts are in new frame.
-      #   if approximately the same (assume unmoved), and use OBB-baed frame to 
-      #   new define cluster.
-      #   validate by computing and comparing new OBB and centroid.
-      #   - greatly speeds up later frames (no nearest-neighbor computation)
-      # Eventually same base from frame to frame.
-      # move these over from World to PC?  
       # Gather results when targeted (point, cluster), pushed, picked up, etc
       # whether it rolled. whether it moved when not a target.
       # store different OBB shapes.
@@ -526,12 +929,44 @@ class WorldState:
       # do close-up analysis (e.g., for perfection game)?
       # self.clusters only contains currently "active" clusters
       # self.old_clusters contains missing/unknown clusters
-
-      # copy pc clusters over to w and move over
-
-      # keep pc clusters - but cleaned up?
+      self.w_best_match = []
+      for w_c_id, w_c in enumerate(self.clusters):
+        if not self.active(w_c_id):
+            continue
+        if (not w_c_id in self.possible_octobase and
+            not w_best_match[w_c_id] in pc_clusters.possible_octobase):
+          pc_clusters.w_best_match.append(w_best_match[w_c_id])
+          self.w_best_match.append(w_best_match[w_c_id])
+        else:
+          pc_clusters.w_best_match.append(None)
+          self.w_best_match.append(None)
+      self.w_unmatched = w_unmatched
+      self.w_unmoved_match = unmoved_match
+      self.w_slightly_moved_match = slightly_moved_match 
+      self.pc_unmatched = pc_unmatched
+      self.obb_w_pc_pct_ovlp = obb_w_pc_pct_ovlp
+      pc_clusters.pc_unmoved_match = pc_unmoved_match
+      pc_clusters.pc_slightly_moved_match = pc_clusters.pc_slightly_moved_match 
+      pc_clusters.w_unmatched = w_unmatched
+      pc_clusters.pc_unmatched = pc_unmatched
+      pc_clusters.obb_w_pc_pct_ovlp = obb_w_pc_pct_ovlp
       self.copy_curr_pc_to_world_state(pc_clusters)
+      self.save_world()
 
+#      print("Unmoved clusters:")
+#      print("  unmoved_match_cnt: ", unmoved_match_cnt)
+#      print("  best_match_cnt   : ", best_match_cnt)
+#      print("  poss_base_cnt    : ", poss_base_cnt)
+#      print("Points added to octobase:", (len(self.octobase) - pre_len))
+#
+#      print("combined potential bases: ", len(self.clusters[w_c_id].cluster['shape']))
+#      print("prev target info:", self.prev_target_w_cluster, self.prev_target_w_grasp, self.prev_target_action)
+#
+#      print("w_unmatched : ", w_info)
+#      print("pc_unmatched: ", pc_info)
+#
+#      print("w_best_match: ", w_best_match)
+#      print("w_dist moved: ", min_dist)
 
 
 #################################################################################
@@ -604,6 +1039,8 @@ class WorldState:
           else:
             cluster_pc = octoclusters
         else:
+          if len(octobase) == 0:
+            return
           cluster_pc = octobase
           # print("octobase")
           # cluster_pc = list(octobase)
@@ -718,8 +1155,9 @@ class WorldState:
           if normal[0] == 0 and normal[1] == 0 and normal[2] == 0:
             if print_once:
               print_once = False
-              print("normal: ",normal)
-            self.normal = [1,1,1]
+              # print("normal: ",normal)
+            # ARD: self.normal = [1,1,1]
+            self.normal = [0,0,0]
           else:
             self.normal = normal / np.linalg.norm(normal)
           vectors = points - self.point
@@ -837,7 +1275,7 @@ class WorldState:
             pnt_id = octomap_todo[0]
             del octomap_todo[0]  
             pnt = octomap_no_rgb[pnt_id]
-            if len(clusters[c_id]) % 100 == 0:
+            if len(clusters[c_id]) % 200 == 0:
               print("octo_todo", len(octomap_todo), len(cluster_pc_todo), len(clusters[c_id]),pnt_id)
             # print("pnt2: ", pnt)
 
@@ -858,7 +1296,7 @@ class WorldState:
                 z_val = self.base_z[get_sector(n_pnt[0], n_pnt[1])]
                 if n_pnt[z] >= z_val:
                   part_of_base = True
-                if pt_in_lst(n_pnt, self.w_c_pot_base):
+                if pt_in_lst(n_pnt, self.w_poss_base_pts):
                   part_of_base = True
               elif n_pnt[z] >= min_base_z:
                 for ob_pnt in octobase:
@@ -917,24 +1355,23 @@ class WorldState:
       # Initial plane segmentation based on a random subset of the octomap
       # that produces results in less than a minute. 
       # The full set of clusters can be seen by removing the base.
-      self.recompute_octobase = True
-      print("b4 len, len, recomp",  len(self.octobase), len(self.possible_octobase), self.recompute_octobase)
+      print("b4 len, len, recomp",  len(self.octobase), len(self.possible_octobase))
       octomap_pc = self.random_pc_subset(np.array(octomap), PC_DENSITY)
       approx_octoclusters_pc, self.octobase = self.segment_octocluster_pc(octomap_pc)
       print("len octobase, len approx_octoclust, recomp",  len(self.octobase), len(approx_octoclusters_pc))
-      if len(approx_octoclusters_pc) == None:
+      if len(approx_octoclusters_pc) == 0:
         # no clusters found
         return False
       # ARD HACK
       self.publish_octo_pc(approx_octoclusters_pc, self.octobase, self.pc_header)
-      rospy.sleep(5)
+      # rospy.sleep(5)
   
       ################
       # Quick additional filtering of the base that leaves clean objects.
       # If there are flat objects that consume a large portion of the base,
       # then turn off FILTER BASE or reduce SECTOR_SIZE.
       if FILTER_BASE:
-        # print("pre elim base:", len(approx_octoclusters_pc), len(self.octobase))
+        print("pre elim base:", len(approx_octoclusters_pc), len(self.octobase))
         self.base_z = compute_z_sectors_from_base(self.octobase)
         delcnt = 0
         for p_id, p in enumerate(approx_octoclusters_pc):
@@ -947,16 +1384,21 @@ class WorldState:
         print("len approx_octoclusters_pc3:", len(approx_octoclusters_pc), len(self.octobase))
         # print("post elim base:", len(approx_octoclusters_pc), len(self.octobase))
         self.publish_octo_pc(approx_octoclusters_pc, self.octobase, self.pc_header)
-        rospy.sleep(5)
+        # rospy.sleep(5)
 
       #################
       # Run additional SEGMENT after filter base_z to further clean up bases
       for filter_num in range(NUM_FILTER_SEGMENT-1):
+          save_approx_octoclusters_pc = approx_octoclusters_pc
+          save_octobase = self.octobase
           print(filter_num, "segmentation pass:", len(approx_octoclusters_pc), len(self.octobase))
           approx_octoclusters_pc, self.octobase = self.segment_octocluster_pc(approx_octoclusters_pc, self.octobase)
-          self.publish_octo_pc(approx_octoclusters_pc, self.octobase, self.pc_header)
-          rospy.sleep(5)
           print("len approx_octoclusters_pc1:", len(approx_octoclusters_pc))
+          if len(approx_octoclusters_pc) == 0:
+            # no clusters found, restore
+            approx_octoclusters_pc = save_approx_octoclusters_pc
+            self.octobase = save_octobase
+          # rospy.sleep(5)
 
       #################
       # Identify individual objects from the full set of clusters
@@ -1011,12 +1453,12 @@ class WorldState:
               if max_z < f[z]:
                 max_z = f[z]
                 z_val = self.base_z[get_sector(f[x], f[y])]
-            if abs(max_z - z_val) < 2 * OCTOMAP_RESOLUTION:
+            if abs(max_z - z_val) < 2.1 * OCTOMAP_RESOLUTION:
               print(c_id,": possible base", abs(max_z - z_val))
               self.possible_octobase.append(c_id)
               # print("poss base clust3: ", len(self.possible_octobase))
-            else:
-              print(c_id,": not part of base", abs(max_z - z_val))
+            # else:
+            #   print(c_id,": not part of base", abs(max_z - z_val))
         if len(flat_segment) != 0:
           self.clusters[c_id].set_attr('shape_attr','flat_pc',[flat_segment, self.possible_octobase])
       self.publish_obb()
@@ -1026,6 +1468,9 @@ class WorldState:
     #####################
     # BOTH UTILITIES
     #####################
+    def get_base_z(self, x, y):
+      return self.base_z[get_sector(x, y)]
+
     def in_playground(self, point):
       pass
       # grasp in playground?
@@ -1110,6 +1555,7 @@ class WorldState:
         return None, None
       # percent overlap
       w_pc_pct_ovrlp, pc_w_pct_ovrlp = self.get_pct_overlap( self.clusters[w_c_id].cluster['obb'],pc_cluster.cluster['obb'])
+
       # if max_pct_ovrlp != None and max_pct_ovrlp > 0.90:
       # if w_pc_pct_ovrlp != None:
       #   print("obb overlap: world",w_c_id, pc_cluster.cluster['id'], w_pc_pct_ovrlp, pc_w_pct_ovrlp)
@@ -1142,6 +1588,8 @@ class WorldState:
       # exchange slots so that keypoints are on top
       if pc.shape[0] > num_pts:
           pc2 = pc[:num_pts]
+      else:
+          pc2 = pc
       return pc2
 
     # icp wants same # points
@@ -1166,7 +1614,6 @@ class WorldState:
             continue
           ret = c.in_bounding_box(point)
           if ret[0] == True:
-            print("grasp in cluster",c_id)
             return c_id
         # print("grasp not in cluster")
         return None
@@ -1296,7 +1743,8 @@ class WorldState:
       pass
 
     def cluster_contains(self, grasp):
-      pass
+      g_c_id = self.in_any_obb([grasp[0], grasp[1], grasp[2]])
+      return g_c_id
 
     def rotate_angle(self):
       return DEG20_IN_RADIANS
@@ -1306,8 +1754,16 @@ class WorldState:
 
     ###################
 
+    def publish_pc_cluster(self, w_c_id):
+      print("publish_pc_cluster:", w_c_id, self.w_best_match)
+      if w_c_id == None:
+        return
+      pc_c_id = self.w_best_match[w_c_id]
+      clust_pc = self.clusters[pc_c_id].cluster['shape']
+      self.publish_octo_pc(clust_pc, [], self.pc_header)
+      self.publish_obb(clust_id = pc_c_id)
 
-    def publish_obb(self, filter_poss_base = True):
+    def publish_obb(self, filter_poss_base = True, clust_id = None):
       ns = "OBB"
       markerArray = MarkerArray()
       marker = Marker()
@@ -1345,6 +1801,8 @@ class WorldState:
       id = 0
       # first point
       for c_id, c in enumerate(self.clusters):
+        if clust_id != None and clust_id != c_id:
+          continue
         if c_id in self.possible_octobase:
           continue
         obb = c.cluster['obb']
@@ -1363,7 +1821,8 @@ class WorldState:
             m.id = id
             id += 1
       if id < self.obb_prev_count:
-        for i in range(self.obb_prev_count[ns] - i):
+        # for i in range(self.obb_prev_count[ns] - id):
+        for i in range(self.obb_prev_count - id):
           marker.points = []
           marker.ns = ns
           marker.id = id + i

@@ -32,7 +32,7 @@ PC_DENSITY = 15000           # further reduction
 # Possibly could start with over-filtering a scene and later under-filtering
 # a scene (HIGH_FILTER, LOW_FILTER)
 # OCTOMAP_WARMUP       = 10    # number of octomap images before processing
-OCTOMAP_WARMUP       = 5    # number of octomap images before processing
+OCTOMAP_WARMUP       = 8    # number of octomap images before processing
 NUM_FILTER_SEGMENT   = 2    # number of additional plane segmentations to perform (min 0)
 
 FILTER_BASE          = True  
@@ -64,7 +64,8 @@ MIN_OBJ_HEIGHT   = 0.9 * INCH
 # MIN_OBJ_HEIGHT   = 0.25 * INCH
 # MIN_OBJ_HEIGHT   = 0.30 * INCH
 # MIN_OBJ_HEIGHT   = 0
-GRIP_EVAL_RADIUS = 1.5 * INCH / 2
+# GRIP_EVAL_RADIUS = 1.5 * INCH / 2
+GRIP_EVAL_RADIUS = 1.5 * INCH 
 GRIPPER_OFFSET   = 1.3 * INCH
 
 OCTOMAP_RESOLUTION = .1 * INCH
@@ -85,3 +86,7 @@ HISTORY_NUM_EVENTS = 5
 
 BIGNUM = 100000000
 ERROR_MARGIN = .1
+
+WORLD_HISTORY_LEN = 5
+
+CALIBRATION_METHODS = ('none', 'manual', 'auto')
