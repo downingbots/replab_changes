@@ -48,6 +48,110 @@ from action_history import *
 
 class Executor:
 
+    def init_manual_grasp_calibration_history(self):
+        grasp_history = [
+                       [0, [-0.00082, -0.01508, 0.4751, -0.21755]],
+                       [1, [-0.10245, 0.00702, 0.4826, -0.06402]],
+                       [2, [-0.15773, 0.0895, 0.4826, -0.17537]],
+                       [3, [0.02615, -0.09245, 0.4826, -0.16235]],
+                       [4, [-0.06592, 0.12449, 0.4801, -0.14054]],
+                       [5, [0.05676, -0.07912, 0.4826, 0.03237]],
+                       [6, [0.09989, -0.1333, 0.39625, -0.83611]],
+                       [7, [0.05079, -0.07826, 0.4876, 0.25279]],
+                       [8, [-0.05168, 0.1272, 0.4826, -0.18158]],
+                       [9, [0.10369, -0.13674, 0.39625, -0.54639]],
+                       [10, [-0.06796, 0.10486, 0.4801, -0.0684]],
+                       [11, [0.09286, -0.14802, 0.4825, 0.0414]],
+                       [12, [0.10369, -0.13674, 0.39625, -0.54639]],
+                       [13, [-0.06796, 0.10486, 0.4801, -0.0684]],
+                       [14, [0.09286, -0.14802, 0.4825, 0.0414]],
+                       [15, [-0.06795, 0.10472, 0.4801, -0.09991]],
+                       [16, [0.09286, -0.14802, 0.4825, 0.0414]],
+                       [17, [0.01294, -0.08313, 0.4826, 0.00401]],
+                       [18, [0.09237, -0.1478, 0.48125, 0.18493]],
+                       [19, [0.04015, -0.13574, 0.4826, -0.00422]],
+                       [20, [-0.08985, -0.10168, 0.4876, -0.0268]],
+                       [21, [0.06368, 0.13282, 0.4726, 0.56394]],
+                       [22, [0.03994, 0.08068, 0.4776, 0.11742]],
+                       [23, [-0.05582, 0.02392, 0.4801, -0.05587]],
+                       [24, [-0.01814, -0.06826, 0.4801, -0.75024]],
+                       [25, [-0.12386, -0.04147, 0.47375, -0.08003]],
+                       [26, [-0.01004, 0.07502, 0.4801, 0.04323]],
+                       [27, [-0.02633, -0.06617, 0.47625, 0.59637]],
+                       [28, [0.08493, 0.07904, 0.46875, 0.06513]],
+                       [29, [0.06057, 0.0392, 0.47875, -0.52877]],
+                       [30, [-0.15401, 0.0859, 0.4801, -0.14314]],
+                       [31, [-0.00461, -0.13922, 0.4826, -0.02725]],
+                       [32, [-0.01709, -0.05971, 0.4801, -0.01963]],
+                       [33, [-0.1552, 0.13042, 0.4876, -0.31355]],
+                       [34, [-0.04139, -0.1313, 0.4851, 0.2989]],
+                       [35, [-0.04166, -0.13183, 0.4851, 0.32844]],
+                       [36, [-0.04163, -0.13174, 0.4851, 0.3428]],
+                       [37, [0.05679, -0.1403, 0.4826, 0.11431]],
+                       [38, [-0.04154, -0.13146, 0.4851, 0.25263]],
+                       [39, [0.16071, -0.01325, 0.4801, -0.78173]],
+                       [40, [-0.03693, 0.14142, 0.47375, 0.18383]],
+                       [41, [0.16071, -0.01325, 0.4801, -0.78173]],
+                       [42, [0.16979, -0.02375, 0.4726, -0.79948]],
+                       [43, [-0.10207, -0.13158, 0.4901, -0.30687]],
+                       [44, [-0.16716, 0.04625, 0.44375, -0.66597]]
+                       ]
+
+
+        grasp_delta_history = [
+ [0, [-0.015000000000000001, -0.0075, 0, -0.47123889803846897, 'EXECUTE_GRASP']],
+ [1, [-0.02, 0.029999999999999995, 0, 0, 'EXECUTE_GRASP']],
+ [2, [-0.024999999999999998, 0.04750000000000001, 0, 0, 'EXECUTE_GRASP']],
+ [3, [0, 0, 0, 0, 'EXECUTE_GRASP']],
+ [4, [0, 0.029999999999999995, 0, 0.15707963267948966, 'EXECUTE_GRASP']],
+ [5, [-0.027499999999999997, -0.01, 0, 0, 'EXECUTE_GRASP']],
+ [6, [-0.04750000000000001, -0.06000000000000002, 0, 0, 'EXECUTE_GRASP']],
+ [7, [0.015000000000000001, 0.0175, 0, 0, 'EXECUTE_GRASP']],
+ [8, [0, 0.027499999999999997, 0, 0, 'EXECUTE_GRASP']],
+ [9, [-0.05750000000000001, -0.06000000000000001, 0, -0.47123889803846897, 'EXECUTE_GRASP']],
+ [10, [0, 0.029999999999999995, 0, 0.15707963267948966, 'EXECUTE_GRASP']],
+ [11, [-0.045000000000000005, 0, 0, -1.0995574287564276, 'EXECUTE_GRASP']],
+ [12, [-0.05750000000000001, -0.06000000000000001, 0, -0.47123889803846897, 'EXECUTE_GRASP']],
+ [13, [0, 0.029999999999999995, 0, 0.15707963267948966, 'EXECUTE_GRASP']],
+ [14, [-0.045000000000000005, 0, 0, -1.0995574287564276, 'EXECUTE_GRASP']],
+ [15, [-0.02, -0.0075, 0, -0.3141592653589793, 'EXECUTE_GRASP']],
+ [16, [-0.032499999999999994, -0.005, 0, -1.0995574287564276, 'EXECUTE_GRASP']],
+ [17, [0.01, -0.015000000000000001, 0, 0, 'EXECUTE_GRASP']],
+ [18, [0, -0.024999999999999998, 0, -0.6283185307179586, 'EXECUTE_GRASP']],
+ [19, [-0.0375, -0.0225, 0, 0, 'EXECUTE_GRASP']],
+ [20, [-0.05250000000000001, 0.015000000000000001, 0, 0, 'EXECUTE_GRASP']],
+ [21, [0.02, 0.0125, 0, 0, 'EXECUTE_GRASP']],
+ [22, [-0.0075, 0.015000000000000001, 0, 0, 'EXECUTE_GRASP']],
+ [23, [-0.029999999999999995, 0.0175, 0, 0.47123889803846897, 'EXECUTE_GRASP']],
+ [24, [-0.024999999999999998, 0.0125, 0, -0.7853981633974483, 'EXECUTE_GRASP']],
+ [25, [-0.0175, -0.032499999999999994, 0, 1.413716694115407, 'EXECUTE_GRASP']],
+ [26, [-0.0075, 0.0175, 0, -2.0420352248333655, 'EXECUTE_GRASP']],
+ [27, [-0.04750000000000001, 0, 0, 0, 'EXECUTE_GRASP']],
+ [28, [0.01, 0, 0, 1.413716694115407, 'EXECUTE_GRASP']],
+ [29, [0.01, 0.0025, 0, 1.8849555921538759, 'EXECUTE_GRASP']],
+ [30, [-0.0125, 0.0375, 0, 0, 'EXECUTE_GRASP']],
+ [31, [-0.045, -0.015, 0, 0, 'EXECUTE_GRASP']],
+ [32, [-0.0325, 0, 0, 0.3141592653589793, 'EXECUTE_GRASP']],
+ [33, [-0.0275, 0.0475, 0, 0.9424777960769379, 'EXECUTE_GRASP']],
+ [34, [-0.04750000000000001, 0, 0, 0.6283185307179586, 'EXECUTE_GRASP']],
+ [35, [0, 0, 0, 0, 'EXECUTE_GRASP']],
+ [36, [-0.0175, 0, 0, 0.6283185307179586, 'EXECUTE_GRASP']],
+ [37, [-0.03, -0.03, 0, 0, 'EXECUTE_GRASP']],
+ [38, [-0.0075, -0.0075, 0, 0, 'EXECUTE_GRASP']],
+ [39, [0.0025, 0, 0, 0.3141592653589793, 'EXECUTE_GRASP']],
+ [40, [0, 0.02, 0, -2.0420352248333655, 'EXECUTE_GRASP']],
+ [41, [0, -0.015, 0, 0, 'EXECUTE_GRASP']],
+ [42, [0, -0.0075, 0, 0, 'EXECUTE_GRASP']],
+ [43, [-0.0575, 0, 0, 0, 'EXECUTE_GRASP']],
+ [44, [-0.025, -0.0245, 0, -0.3141592653589793, 'EXECUTE_GRASP']]
+ ]
+        for i, g_h in enumerate(grasp_history):
+          [num, g] = grasp_history[i]
+          [num, g_d] = grasp_delta_history[i]
+          self.manual_grasp_calibration_history.append([g, g_d, True])
+        self.manual_grasp_calibration_print_history()
+
+
     def __init__(self, scan=False, datapath='', save=False):
         # WidowX controller interface
         self.widowx = WidowX()
@@ -60,6 +164,9 @@ class Executor:
         self.octomap_ready = False
         self.octomap_ready2 = False
         self.manual_grasp_calibration_history = []
+        self.init_manual_grasp_calibration_history()
+        self.calibration_matrix2 = None 
+        self.residuals2 = None
         self.sector_grasp_delta = []
         self.calibration_mode = False
         for i in range(SECTOR_SIZE * SECTOR_SIZE):
@@ -217,12 +324,13 @@ class Executor:
               # self.octomap_pc = list(self.octomap)
               # self.octomap_pc = [[p[0],p[1],p[2],np.uint32(p[3])] for p in self.octomap]
               self.octomap_ready = False
+              self.octomap_ready2 = False
               print((OCTOMAP_WARMUP - warmup), " len octomap_pc:",len(self.octomap_pc))
             # if len(self.octomap_pc) > 0:
             #   print("octomap[0]:",self.octomap_pc[0])
             if len(self.octomap_pc) == 0:
               # if retry_cnt >= 3:
-              if retry_cnt >= 1:
+              if retry_cnt >= 0:
                 print("get_pc")
                 retry_cnt = 0
                 self.get_pc()  
@@ -258,25 +366,27 @@ class Executor:
         def transform_pc(srcpc, tf_matrix):
             ones = np.ones((srcpc.shape[0], 1))
             srcpc = np.append(srcpc, ones, axis=1)
-            out = np.dot(tf_matrix, srcpc.T)[:3]
+            if not self.calibration_mode and self.calibration_matrix2 != None :
+              cm2 = np.dot(self.calibration_matrix2, tf_matrix.T)
+              out = np.dot(cm2, srcpc.T)
+            else:
+              out = np.dot(tf_matrix, srcpc.T)[:3]
             return out.T
 
-        self.calibration_mode = False   # disable. calib matrix req by octomap
-        if not self.calibration_mode:
-          pc = transform_pc(pc, self.cm)
-        else:
-          cm2  = np.array([[-1.0,  0.0,  0.0, 0.0],
-                           [ 0.0, -0.95,  0.39, 0.0],
-                           [ 0.0,  0.47,  0.95, 0.0],
-                           [ 0.0,  0.0,  0.0, 1.0]])
-          cm2 = self.cm
-          pc = transform_pc(pc, cm2)
+        pc = transform_pc(pc, self.cm)
+        # if not self.calibration_mode:
+        #   cm2  = np.array([[-1.0,  0.0,  0.0, 0.0],
+        #                    [ 0.0, -0.95,  0.39, 0.0],
+        #                    [ 0.0,  0.47,  0.95, 0.0],
+        #                    [ 0.0,  0.0,  0.0, 1.0]])
+        #   cm2 = self.cm
+        #   pc = transform_pc(pc, cm2)
 
         # put rgb back in pc
         # rgb_pc = [[p[0],p[1],p[2],rgb_pc[i][3]] for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS)]
         rgb_pc = [[p[0],p[1],p[2],rgb_pc[i][3]] for i, p in enumerate(pc) if inside_polygon(p, BASE_PC_BOUNDS, BASE_HEIGHT_BOUNDS)]
         pc = rgb_pc
-        print("len pc ", len(pc))
+        # print("len pc ", len(pc))
 
         # pruning not required with Octomap. Higher res is better.
         # # do further PC size reduction for kdtree and grip analysis
@@ -431,13 +541,14 @@ class Executor:
         print("--------------------")
 
         sect_cnt = 0
-        for sect in range(SECTOR_SIZE*SECTOR_SIZE):
-          if self.sector_grasp_delta[sect][4] > 0:
-            sect_cnt += 1
-          else:
-            print("sect", sect," not yet calibrated") 
+        if self.sector_grasp_delta != None:
+          for sect in range(SECTOR_SIZE*SECTOR_SIZE):
+            if self.sector_grasp_delta[sect][4] > 0:
+              sect_cnt += 1
+            elif sect_cnt > SECTOR_SIZE*SECTOR_SIZE/2:
+              print("sect", sect," not yet calibrated") 
         if sect_cnt == (SECTOR_SIZE*SECTOR_SIZE):
-          calibration_matrix, residuals = self.compute_calibration(
+          self.calibration_matrix2, self.residuals2 = self.compute_calibration(
             executor.robot_coordinates, executor.camera_coordinates)
 
     def set_calibration(self, T_F):
@@ -458,21 +569,27 @@ class Executor:
               print("grasps:",grasp)
               print("grasp: ",new_x, new_y, new_z, new_theta)
               c_id = policy.get_grasp_cluster(grasp)
-              if c_id == None or c_id in visited_c_id:
-                continue
-              else:
-                visited_c_id.append(c_id)
+              # if c_id == None or c_id in visited_c_id:
+              #   continue
+              # else:
+              #   visited_c_id.append(c_id)
             
               prelift_z = min(PRELIFT_HEIGHT, (new_z - GRIPPER_OFFSET - .02))
               lift_z = new_z - GRIPPER_OFFSET
               if (action == "GRASP"):                     
-                # Start from neutral; May choose different grasp/cluster
-                assert inside_polygon( (new_x, new_y, new_z), 
-                    END_EFFECTOR_BOUNDS), 'Grasp not in bounds'
-                assert self.widowx.orient_to_pregrasp(
-                    new_x, new_y), 'Failed to orient to target'
-                self.record_action(action,"orient_to_pregrasp",
-                    [["GOAL_X", new_x],["GOAL_Y", new_y]])
+                try:
+                  # Start from neutral; May choose different grasp/cluster
+                  # while calibrating, out of bounds may actually be in-bounds
+                  # assert inside_polygon( (new_x, new_y, new_z), 
+                  #   END_EFFECTOR_BOUNDS), 'Grasp not in bounds'
+                  assert self.widowx.orient_to_pregrasp(
+                      new_x, new_y), 'Failed to orient to target'
+                  self.record_action(action,"orient_to_pregrasp",
+                      [["GOAL_X", new_x],["GOAL_Y", new_y]])
+                except Exception as e:
+                      print('Error executing grasp -- skipping grasp...')
+                      traceback.print_exc(e)
+                      continue
                 [delta_x, delta_y, delta_z, delta_theta, new_action] = [0, 0, 0, 0, None] 
                 grasp_delta = [delta_x, delta_y, delta_z, delta_theta, new_action] 
     
@@ -484,11 +601,17 @@ class Executor:
                   calib_new_theta = new_theta + delta_theta
                   print('Attempting grasp: (%.4f, %.4f, %.4f, %.4f)'
                         % (calib_new_x, calib_new_y, calib_new_z, calib_new_theta))
-                  assert self.widowx.move_to_grasp(calib_new_x, calib_new_y, calib_new_z, calib_new_theta), \
+                  try:
+                    assert self.widowx.move_to_grasp(calib_new_x, calib_new_y, calib_new_z, calib_new_theta), \
                       'Failed to reach pre-lift pose'
 
-                  grasp_delta = self.manual_grasp_calibration(grasp_delta)
-                  [delta_x, delta_y, delta_z, delta_theta, new_action] = grasp_delta
+                    grasp_delta = self.manual_grasp_calibration(grasp_delta)
+                    [delta_x, delta_y, delta_z, delta_theta, new_action] = grasp_delta
+                  except Exception as e:
+                      print('Error executing grasp -- skipping grasp...')
+                      traceback.print_exc(e)
+                      new_action = "SKIP_GRASP"
+               
                   if new_action == "SKIP_GRASP":
                     break
                   if new_action == "NEXT_IMAGE":
@@ -539,12 +662,143 @@ class Executor:
             traceback.print_exc(e)
             return False, 1
 
+    #############
+    # execute_goal_plan()
+    #############
+    # After analyzing an octomap and comparing it to the goal, a sequence
+    # of actions were planned out for different clusters. This executes the
+    # actions. 
+    #############
+    def execute_goal_plan(self, goal_plan):
+        x,y,z,th = 0,1,2,3
+        pick_result = []
+        action_completed = []
+        for goal_plan_info in goal_plan:
+          try:
+              gs_w_cid    = goal_plan_info[0]
+              gs_g_cid    = goal_plan_info[1]
+              gs_desc     = goal_plan_info[2]
+              goal_info   = goal_plan_info[3]
+              action_info = goal_plan_info[4]
+              w_cid       = action_info[0]
+              action      = action_info[1]
+              print(goal_plan_info)
+              if action == "PICK_PLACE":
+                [w_cid, action_name, grasp, place] = action_info
+                self.widowx.open_gripper()
+                assert self.widowx.orient_to_pregrasp(
+                    grasp[x], grasp[y]), 'Failed to orient to target'
+                prelift_z = min(PRELIFT_HEIGHT, (grasp[z] - GRIPPER_OFFSET - .02))
+                assert self.widowx.move_to_grasp(grasp[x], grasp[y],
+                     prelift_z, grasp[th]), \
+                    'Failed to reach pre-lift pose'
+                reached = self.widowx.move_to_vertical(grasp[z])
+                self.widowx.close_gripper()
+                pose = self.get_pose()
+                joints = self.widowx.get_joint_values()
+                print("joints:",joints)
+                gripper_gap = joints[0] - np.array(GRIPPER_CLOSED[0])
+                threshold=.0003
+                if (gripper_gap > threshold):
+                  print("eval_grasp:", gripper_gap, joints[0], pose[0])
+                  pick_result.append[w_cid, True]
+                else:
+                  pick_result.append[w_cid, False]
+                reached = self.widowx.move_to_vertical(prelift_z)
+                assert self.widowx.move_to_place(place[x], place[y],
+                     prelift_z, grasp[th]), \
+                    'Failed to reach pre-lift pose'
+                reached = self.widowx.move_to_vertical(place[z])
+                self.widowx.open_gripper()
+                reached = self.widowx.move_to_vertical(prelift_z)
+
+              elif action == "PUSH_FROM_EDGE":
+                [w_cid, action_name, side, pt0, pt1, pt2, theta, gw] = action_info
+                prelift_z = min(PRELIFT_HEIGHT, (pt0[z] - GRIPPER_OFFSET - .02))
+                self.widowx.open_gripper(gripper_value = gw)
+                assert self.widowx.orient_to_pregrasp(
+                    pt0[x], pt0[y]), 'Failed to orient to target'
+                assert self.widowx.move_to_grasp(pt0[x], pt0[y], prelift_z, theta), \
+                    'Failed to reach pre-lift pose'
+                reached = self.widowx.move_to_vertical(pt0[z])
+                assert self.widowx.move_to_grasp(pt1[x], pt1[y], pt1[z], theta), \
+                    'Failed to reach pre-lift pose'
+                assert self.widowx.move_to_grasp(pt2[x], pt2[y], pt2[z], theta), \
+                    'Failed to reach pre-lift pose'
+                prelift_z = min(PRELIFT_HEIGHT, (pt2[z] - GRIPPER_OFFSET - .02))
+                reached = self.widowx.move_to_vertical(pt0[z])
+
+              elif action == "ROTATE":
+                [w_cid, action_name, top_ctr_pt, theta, gw, rads] = action_info
+                self.widowx.open_gripper(gripper_value = gw)
+                assert self.widowx.orient_to_pregrasp(
+                    top_ctr_pt[x], top_ctr_pt[y]), 'Failed to orient to target'
+                prelift_z = min(PRELIFT_HEIGHT, (top_ctr_pt[z] - GRIPPER_OFFSET - .02))
+                assert self.widowx.move_to_grasp(top_ctr_pt[x], top_ctr_pt[y], prelift_z, th), \
+                    'Failed to reach pre-lift pose'
+                reached = self.widowx.move_to_vertical(top_ctr_pt[z])
+                self.widowx.wrist_rotate(rads)
+                self.widowx.open_gripper()
+                reached = self.widowx.move_to_vertical(prelift_z)
+
+              elif action == "NUDGE" or action == "PUSH":
+                [w_cid, action_name, start_pt, end_pt, theta, gw] = action_info
+                assert self.widowx.orient_to_pregrasp(
+                    start_pt[x], start_pt[y]), 'Failed to orient to target'
+                prelift_z = min(PRELIFT_HEIGHT, (start_pt[z] - GRIPPER_OFFSET - .02))
+                self.widowx.open_gripper(gripper_value = gw)
+                assert self.widowx.move_to_grasp(start_pt[x], start_pt[y], prelift_z, theta), \
+                    'Failed to reach pre-lift pose'
+                reached = self.widowx.move_to_vertical(start_pt[z])
+                assert self.widowx.move_to_grasp(end_pt[x], end_pt[y], end_pt[z], theta), \
+                    'Failed to reach pre-lift pose'
+                reached = self.widowx.move_to_vertical(end_pt[z])
+
+              action_completed.append([w_cid, True])
+
+          except Exception as e:
+            print('Error executing action...')
+            traceback.print_exc(e)
+            action_completed.append([w_cid, False])
+
+          # move to safe location and take image for visual-servoing training
+          premove_z = PRELIFT_HEIGHT - GRIPPER_HEIGHT * 2
+          reached = self.widowx.move_to_vertical(premove_z)
+          # move to neutral so that we can take clean training image
+          self.widowx.move_to_neutral()
+
+        # goal.evalaluate_move(goal_plan, pick_result, action_completed)
+        return pick_result, action_completed
+
+
+    #############
+    # execute_grasp(), execute_action()
+    #############
+    # for non-goal non-move based execution of grasps.
+    # The goal was analyze-octomap, execute single action, 
+    # possibly analyze after partial move (e.g.,pre-lift, after grasp attempt,
+    # or post-lift). Then choose a follow-up action like drop or push.
+    # Eventually, analyze became so expensive, that a goal-based move-based
+    # approach became favored.
+    #############
     def execute_grasp(self, grasp, grasps = None, confidences = None, policy = None, manual_label=False):
+        action = ["GRASP", grasp, grasps, confidences, manual_label]
+        self.execute_action(action)
+
+    def execute_action(self, action_info):
         try:
-            action = "GRASP"
-            # set values for initial grasp
-            new_x, new_y, new_z, new_theta = grasp
-            grasp_hist = [grasp]
+            action = action_info[0]
+            next_action = None
+            if action == "PICK_PLACE":
+              # [PICK_PLACE, [pick x,y,z,theta][place x,y,z,theta]]
+              next_action = action
+              next_action = "PLACE"
+              action = "PLACE"
+            if action == "GRASP":
+              [action_name, grasp, grasps, confidences, manual_label] = action
+              # set values for initial grasp
+              new_x, new_y, new_z, new_theta = grasp
+              grasp_hist = [grasp]
             cur_pose =  self.get_pose()
             [cur_x, cur_y, cur_z] = [cur_pose[0], cur_pose[1], cur_pose[2]]
             e_i = 1
@@ -608,24 +862,24 @@ class Executor:
                 assert self.widowx.move_to_grasp(new_x, new_y, 
                      prelift_z, new_theta), \
                     'Failed to reach pre-lift pose'
-                self.record_action(action,"move_to_grasp",
-                    [["GOAL_X", new_x]["GOAL_Y", new_y],["GOAL_Z", prelift_z]["GOAL_THETA", new_theta]])
-                self.commander.execute(plan, wait=True)
                 reached = self.widowx.move_to_vertical(new_z)
-                self.record_action(action, "move_to_vertical", [["GOAL_Z", new_z]])
                 self.widowx.close_gripper()
-                self.record_action(action, "close_gripper")
                 pose = self.get_pose()
                 joints = self.widowx.get_joint_values()
-                print("joints:",joints)
+                # gripper_gap = joints[0] - np.array(GRIPPER_CLOSED[0])
+                # threshold=.0003
+                # if (gripper_gap > threshold):
+                  # print("eval_grasp:", gripper_gap, joints[0], pose[0])
+                  # pick_result = True
+                # else:
+                  # pick_result = False
+                # reached = self.widowx.move_to_vertical(prelift_z)
                 eval_grasp_action = policy.evaluate_grasp(grasp, grasps, pose, joints)
                 if eval_grasp_action['EVA_SUCCESS']:
                   print("grasp successfull based upon gripper servo", eval_grasp_action['EVA_CLOSURE'])
                 reached = self.widowx.move_to_vertical(prelift_z)
                 octomap, header = self.get_octomap_pc()
                 eval_grasp_action = policy.evaluate_grasp_target(octomap, grasp)
-                if eval_grasp_action['EVA_SUCCESS']:
-                  print("grasp target moved", eval_grasp_action['EVA_CLOSURE'])
               elif (action == "PICKUP"):                     
                 assert self.widowx.move_to_grasp(new_x, new_y, 
                      prelift_z, new_theta), \
@@ -675,12 +929,17 @@ class Executor:
               pose = self.get_pose()
               joints = self.widowx.get_joint_values()
               print("joints:",joints)
+              # TODO: the following are for recording training data
               eval_grasp_action = policy.evaluate_grasp(grasp, grasps, pose, joints, e_i)
               action = eval_grasp_action['EVA_ACTION']
-              print("action changed to RANDOM_DROP: ", action)
-              action = "RANDOM_DROP"   # ARD
               new_x, new_y, new_z, new_theta = eval_grasp_action['EVA_NEW_POSE']
               cur_x, cur_y, cur_z, cur_theta = eval_grasp_action['EVA_POSE']
+              # current simplification
+              if next_action == None:
+                action = "RANDOM_DROP"   # ARD
+              else:
+                action = next_action
+                
               # end grasping loop
 
             # self.widowx.move_to_neutral()
@@ -690,15 +949,15 @@ class Executor:
 
             # GRAB COMPLETE; DO DROP IF SUCCESSFUL
             # action = eval_world_action['EVA_ACTION']
-            action = "RANDOM_DROP"
-            if action in ["NO_DROP","PUSH","RANDOM_DROP","AIMED_DROP","ISOLATED_DROP"]:
+            # action = "RANDOM_DROP"
+            if action in ["NO_DROP","PUSH","PUSH_FROM_EDGE","RANDOM_DROP","AIMED_DROP","ISOLATED_DROP","PLACE"]:
               def pos_neg():
                 if random() >=.5:
                   return -1
                 return 1
               if (action == "NO_DROP"):    
                 pass
-              elif (action == "PUSH"):    
+              elif (action == "PUSH_AFTER_FAILED_GRASP"):    
                 # ARD: TODO
                 # Sine: sin(theta) = Opposite / Hypotenuse
                 # Cosine: cos(theta) = Adjacent / Hypotenuse
@@ -724,6 +983,8 @@ class Executor:
                 # ARD: todo: post_move_sample
                 # post_move_sample('after')
                 # eval_world_action = policy.evaluate_world()
+              elif (action == "PUSH_FROM_EDGE"):         # rotate 20 degrees
+                pass
               elif (action == "FLIP_DROP"):         # rotate 20 degrees
                 assert self.widowx.orient_to_pregrasp(
                   x, y), 'Failed to orient to target'

@@ -7,12 +7,14 @@ import argparse
 from executor import *
 from pickpushpolicy import *
 from policy import *
+from goal import *
 from replab_core.config import *
 from replab_core.utils import *
 from numpy.random import choice
 
 
 def main():
+    print(METHODS)
     parser = argparse.ArgumentParser()
     parser.add_argument('--samples', type=int, default=1000,
                         help="Number of samples to collect")
@@ -27,10 +29,14 @@ def main():
     parser.add_argument('--calibrate', type=str, default='none',
                         help="Method used for calibrating grasps", 
                         choices=CALIBRATION_METHODS)
+    parser.add_argument('--goal', type=str,
+                        default='', help="File with goal octomap pointcloud")
+    parser.add_argument('--save_goal', type=str, 
+                        default='', help="save octomap pointcloud to file")
     parser.add_argument('--email', action="store_true", default=False,
                         help="Send an email if data collection is interrupted (email settings must be configured correctly)")
 
-    # print(METHODS)
+    print(METHODS)
     args = parser.parse_args()
 
     assert args.method in METHODS
@@ -71,6 +77,17 @@ def main():
         if args.calibrate == 'manual':
             executor.set_calibration(True)
 
+        print("save_goal: ", args.save_goal)
+        if len(args.save_goal) > 0:
+          import world
+          goal_octomap_pc, header = executor.get_octomap_pc()
+          # # do twice to ensure full detail
+          # goal_octomap_pc, header = executor.get_octomap_pc()
+          print("len octomap: ", len(goal_octomap_pc))
+          world_clusters = WorldState()
+          world_clusters.publish_octo_pc(goal_octomap_pc, [], header, analyzed = False, save_file=args.save_goal)
+          exit()
+
         sample_id = args.start
         while sample_id < args.start + args.samples:
 
@@ -84,7 +101,21 @@ def main():
               # in pickpush, get_pc publishes to the octomap server and
               # get_octomap_pc returns the parameters to plan_graps
               octomap, header = executor.get_octomap_pc()
+              if len(args.goal) > 0:
+                if sample_id == args.start:
+                  # only executed first time
+                  import pypcd
+                  # import pcl_helper
+                  print("goal: ",args.goal)
+                  pypc = pypcd.PointCloud.from_path(args.goal)
+                  goal_octomap_tuple = pypc.pc_data
+                  # print(goal_octomap_tuple)
+                  goal_state = GoalState(goal_octomap_tuple, header)
+                  policy.set_goal(goal_state)
+                octomap_goal_score = goal_state.compute_goal_score(octomap)
+                print("octomap_goal_score: ", octomap_goal_score)
 
+            sample_id += 1
             if len(pc) == 0:
               print("pc len 0")
               rospy.sleep(1)
@@ -117,10 +148,12 @@ def main():
             confidences = []
             kept_indices = []
             calib_grasps = []
+            policy.clear_target_grasp()
 
             for i, (grasp, confidence) in enumerate(grasps):
                 print(i," grasp:", grasp)
-                if inside_polygon([grasp[0],grasp[1],grasp[2]], END_EFFECTOR_BOUNDS):
+                disable_polygon_check = (args.calibrate == 'manual')
+                if disable_polygon_check or inside_polygon([grasp[0],grasp[1],grasp[2]], END_EFFECTOR_BOUNDS):
                     kept_indices.append(i)
                     confidences.append(confidence)
                     calib_grasps.append(grasp)
@@ -144,35 +177,28 @@ def main():
               executor.publish_grasps(grasps, calib_grasps[0])
               executor.record_grasp(calib_grasps[0], grasps)
               success, err = executor.calibrate_grasp(calib_grasps, confidences,  policy)
+
             elif args.method == 'pickpush':
-              print("Publish grasps")
-              executor.publish_grasps(grasps, grasp)
-              executor.record_grasp(grasp, grasps)
-              success, err = executor.execute_grasp(grasp, grasps, confidences,  policy)
-            else:
-              success, err = executor.execute_grasp(grasp)
+              prev_action = [] # [c_id, [action], succ/fail, dist_moved]
+              if len(args.goal) > 0:
+                goal_plan = goal_state.goal_plan_moves(policy, grasps, confidences)
+                print(goal_plan)
+                # pick/place or push the clusters to become like a goal octomap
+                # success, err = executor.execute_grasp(grasp, grasps, confidences,  policy)
+                success, err = executor.execute_goal_plan(goal_plan)
+                executor.publish_grasps(grasps, grasp)
+                executor.record_grasp(grasp, grasps)
 
-            if err:
-                executor.widowx.move_to_reset()
-                executor.widowx.open_gripper(drop=True)
-                executor.widowx.move_to_neutral()
-                executor.widowx.open_gripper()
-                continue
-
-            if args.save:
-                executor.save_sample(sample_id)
-
-            print('Success: %r %f' % (success, err))
-
-            if counter % 500 == 499:
-                executor.widowx.sweep_arena()
-                executor.widowx.move_to_neutral()
-            sample_id += 1
-            counter += 1
-            rospy.sleep(1)
-
-        end = time.time()
-        print('Time elapsed : %.2f' % (end - start))
+              else:
+                # try up to one grasp per cluster in this "move"
+                # first move already selected above
+                policy.init_move(grasps, confidences, kept_indices[selected])
+                while grasp != None:
+                  print("Publish grasps")
+                  executor.publish_grasps(grasps, grasp)
+                  executor.record_grasp(grasp, grasps)
+                  success, err = executor.execute_grasp(grasp, grasps, confidences,  policy)
+                  grasp = policy.next_grasp_in_move(grasps, confidences)
 
     except Exception as e:
         traceback.print_exc(e)
@@ -182,3 +208,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

@@ -31,6 +31,76 @@ def get_sector(x, y):
       # print(x_sect, y_sect, sect)
       return sect
 
+def close_to_side(pt):
+      desired_dist = 1 * INCH 
+      pc_b = BASE_PC_BOUNDS
+      # 0,0 is approx center of base
+      ul = pc_b[0]  # upper left
+      br = pc_b[2]  # bottom right
+      maxval = max(abs(pc_b[0][0])*2, abs(pc_b[0][1]*2))
+      min_d = []
+      for i in range(2):    # from left-right or top-bottom
+        for j in range(2):  # from upper-left or bottom-right
+          d = abs(pc_b[j*2][i] - pt[i])
+          if d < desired_dist and d < maxval:
+            min_d.append([i,j,d])
+      if len(min_d) == 0:
+        return pt, "no side", 2*desired_dist, None, None
+      elif len(min_d) == 1:
+        [i,j,d] = min_d[0]
+        if j == 0:    # left/right side
+          spnt0 = None
+          spnt1 = [pc_b[j*2][i], pt[1-i], pt[2]]
+          if i == 0:
+            side = "top left"
+            spnt2 = [pc_b[j*2][i] + desired_dist*2, pt[1-i], pt[2]]
+          else:
+            side = "bottom left"
+            spnt2 = [pc_b[j*2][i] - desired_dist*2, pt[1-i], pt[2]]
+        else:         # top/bottom
+          spnt1 = [pt[i], pc_b[j*2][1-i], pt[2]]
+          if i == 0:
+            side = "bottom left"
+            spnt0 = [pt[i], pc_b[j*2][1-i] - desired_dist, pt[2] - desired_dist - .5*GRIPPER_LEN]
+            spnt2 = [pt[i], pc_b[j*2][1-i] + desired_dist*2, pt[2]]
+          else:
+            side = "bottom right"
+            spnt0 = [pt[i], pc_b[j*2][1-i] - desired_dist, pt[2] - desired_dist - .5*GRIPPER_LEN]
+            spnt2 = [pt[i], pc_b[j*2][1-i] - desired_dist*2, pt[2]]
+        return pt, side, d, spnt1, spnt2
+      elif len(min_d) == 2:   # corner
+        [i,j,d] = min_d[0]
+        if j == 0:    
+          if i == 0: # top, left
+            side = "corner: top left"
+            spnt0 = [pc_b[j*2][i], pc_b[j*2][i] + desired_dist, pt[2] + desired_dist - .5*GRIPPER_LEN]
+            spnt1 = [pc_b[j*2][i], pc_b[j*2][i], pt[2]]
+            spnt2 = [pc_b[j*2][i] - desired_dist*2, pc_b[j*2][i] + desired_dist*2, pt[2]]
+          else:      # bottom, left
+            side = "corner: bottom left"
+            spnt0 = [pc_b[j*2][i], pc_b[j*2][i] - desired_dist, -desired_dist0 - .5*GRIPPER_LEN]
+            spnt1 = [pc_b[j*2][i], pc_b[j*2][i], pt[2]]
+            spnt2 = [pc_b[j*2][i] + desired_dist*2, pc_b[j*2][i] + desired_dist*2, pt[2]]
+        else:         
+          if i == 0: # top, right
+            side = "corner: top right"
+            spnt0 = [pc_b[j*2][i], pc_b[j*2][i] + desired_dist,  pt[2]-desired_dist - .5*GRIPPER_LEN]
+            spnt1 = [pc_b[j*2][i], pc_b[j*2][1-i], pt[2]]
+            spnt2 = [pc_b[j*2][i] - desired_dist*2, pc_b[j*2][1-i] - desired_dist*2, pt[2]]
+          else:      # bottom, right
+            side = "corner: bottom right"
+            spnt0 = [pc_b[j*2][i], pc_b[j*2][1-i]-desired_dist, pt[2]-desired_dist - .5*GRIPPER_LEN]
+            spnt1 = [pc_b[j*2][i], pc_b[j*2][1-i], pt[2]]
+            spnt2 = [pc_b[j*2][i] + desired_dist*2, pc_b[j*2][1-i] - desired_dist*2, pt[2]]
+        # pt = check if point is close to side
+        # spnt0 = up slope point on top/bot side, None for l/r sides
+        # spnt1 = point on side
+        # spnt2 = point a minimum distance from side
+        return pt, side, d, spnt0, spnt1, spnt2
+      else:
+        printf("ERROR: close to",len(min_d)," sides!")
+        return pt, None, None, None, None, None
+
 def compute_z_sectors_from_base(base_pc):
       sector_sz = SECTOR_SIZE  # depends on max object size vs. base sz
       base_z = []
@@ -336,6 +406,33 @@ def from_2d_pixel_to_3d_point(points, pc_3d):
         # print("pc_points: ", pc_points)
         return pc_points
 
+# line_intersection((A, B), (C, D))
+def line_intersection(line1, line2, dist = None):
+    xdiff = (line1[0][0] - line1[1][0], line2[0][0] - line2[1][0])
+    ydiff = (line1[0][1] - line1[1][1], line2[0][1] - line2[1][1])
+
+    def det(a, b):
+        return a[0] * b[1] - a[1] * b[0]
+
+    div = det(xdiff, ydiff)
+    if div == 0:
+       raise Exception('lines do not intersect')
+
+    d = (det(*line1), det(*line2))
+    x = det(d, xdiff) / div
+    y = det(d, ydiff) / div
+    return x, y
+
+def pt_on_line_seg(line_seg, dist):
+    xdiff = (line1[0][0] - line1[1][0])
+    ydiff = (line1[0][1] - line1[1][1])
+    if xdiff == 0:
+      return line1[0][0], line1[0][1]+dist
+    slope = ydiff / xdiff
+    dx = sqrt(dist * dist / (slope*slope+1))
+    dy = slope * dx
+    return line1[0][0]+dx, line1[0][1]+dy
+    
 def add_color_slow(pc1,pc2):
    # simple N*M + 2N algorithm: unacceptably slow
    min_dist = [[BIGNUM, 0] for i1, p1 in enumerate(pc1)]

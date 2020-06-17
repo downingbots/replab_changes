@@ -357,11 +357,14 @@ class PickPushCollection(Policy):
         # self.display_cluster_history(cluster_id)
         return eval_grasp_action
 
+    def clear_target_grasp(self):
+        self.world_clusters.clear_target_grasp()
+
     def set_target_grasp(self, grasp, action):
         g_c_id = self.world_clusters.in_any_obb(grasp)
         self.world_clusters.set_target_grasp(g_c_id, grasp, action)
 
-    def evaluate_grasp(self, grasp, grasps, pose, joints, e_i=None, a_i=None):
+    def evaluate_grasp(self, w_c_id, action, grasp, grasps, pose, joints, e_i=None, a_i=None):
         # ISOLATE until YOLO is trained
         self.action_mode = "ISOLATE"     # ISOLATE, INTERACT, CURIOSITY
 
@@ -384,8 +387,10 @@ class PickPushCollection(Policy):
           eval_grasp_action['EVA_SUCCESS'] = False
           eval_grasp_action['EVA_CLOSURE'] = 0
         # print("eval_grasp: ", threshold, manual)
+        self.world_clusters.clusters[w_c_id].add_to_history(action, result)
         return eval_grasp_action
 
+    # currently being done in "goal_plan"
     def post_grasp_action(self, grasp, grasps, pose, joints, e_i=None, a_i=None):
         iterator = 1          # ARD: huh? Needs to be fleshed out
         if eval_grasp_action['EVA_SUCCESS'] and False:
@@ -465,13 +470,61 @@ class PickPushCollection(Policy):
         # return success
         return True
 
+    # get_octomap and subsequent analysis takes a lot of time.
+    # each "move" does one grasp attempt per cluster per get_octomap
+    def init_move(self, grasps, confidences, initial_grasp):
+        self.visited_c_id = []
+        self.unvisited_conf   = [c for i, c in enumerate(confidences)]
+        self.unvisited_grasps = [i for i in range(len(confidences))]
+        del self.unvisited_grasps[initial_grasp]
+        sum_conf = 0
+        for c in self.unvisited_conf:
+          sum_conf += c
+          if sum_conf > 0:
+            self.unvisited_conf /= sum_conf
+
+    def next_grasp_in_move(self, grasps, confidences):
+        # find next grasp for a cluster that has not been attempted
+        # during this move (get_octomap)
+        grasp = None
+        if len(self.unvisited_grasps) <= 0:
+          return None
+        while len(self.unvisited_grasps) > 0:
+          selected = np.random.choice(self.unvisited_grasps, p = (self.unvisited_conf))
+          print("selected", selected, len(self.unvisited_conf), self.unvisited_grasps)
+          if selected not in visited_grasps:
+            self.unvisited_grasps.remove(selected)
+            self.unvisited_conf = [c for i, c in enumerate(confidences) if i in self.unvisited_grasps]
+            sum_conf = 0 
+            for c in self.unvisited_conf:
+              sum_conf += c
+            if sum_conf > 0:
+              self.unvisited_conf /= sum_conf
+          else:
+            continue
+          grasp = grasps[selected][0]
+          c_id = policy.get_grasp_cluster(grasp)
+          if c_id == None or c_id in self.visited_c_id:
+            grasp = None
+            continue   # only visit a c_id once per image
+          else:
+            self.visited_c_id.append(c_id)
+            break
+        return grasp
+
+    def set_goal(self, goal_state):
+        self.goal_state = goal_state
+
     def __init__(self, event_history=None):
         self.min_samples = CLUSTER_MIN_SZ
         self.world_clusters = None
         self.pc_cluster_history = []
         self.recent_grasps = None
         self.callibration = "none"
-
+        self.visited_c_id = None
+        self.unvisited_conf   = None
+        self.unvisited_grasps = None
+        self.goal_state = None
       
 
 

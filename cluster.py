@@ -34,10 +34,12 @@ class ClusterState:
                num_grasps = None, grasps = None, grasp_attr = None,
                interaction = None, interaction_attr = None,
                state = None): 
+
       # self.cluster = {}  # done during init
       self.cluster['id'] = id
       self.cluster['status'] = status # known, possible match, possible_combined
                                     # obsolete, removed
+                 # ACTIVE, INACTIVE
       self.cluster['centroid'] = centroid          # current centroid 
       self.cluster['shape'] = shape                # normalized consolidated PC
       self.cluster['obb'] = obb                    # 3 sets of (x,y,z)
@@ -45,6 +47,7 @@ class ClusterState:
       self.cluster['shape_attr'] = shape_attr      # ["name",value] pair
                                                    # bounding box
                                               # shape_type: cyl, box, sphere...
+      self.cluster_move_history = {}
       if num_locations == None:
         self.cluster['num_locations'] = 0            
         self.cluster['location'] = []              # a history of locations
@@ -55,14 +58,22 @@ class ClusterState:
       if location is not None:
         self.cluster['num_locations'] += 1
         self.cluster['location'].append(location)  # center=x,y,z + orientation
-      self.cluster['state'] = state                # e.g., ISOLATED 
-                                              # rotated, flipped, pushed
-                                              # flat spots, rolls, container
-                                              # soft
+      self.cluster['state'] = state                
+				      # e.g., ISOLATED 
+				      # rotated, flipped, pushed
+				      # flat spots, rolls, container
+				      # soft
+      # interaction is for entropy. Drop ontop of object, place on top, push into..`
       self.cluster['interaction'] = interaction    # with cluster_id list
       self.cluster['interaction_attr'] = interaction_attr  # ["name",value] pair
       # pointer to self.cluster not a deep copy!
       self.cluster['normalized_shape'] = []
+      self.cluster['status'] = "INACTIVE"     # ACTIVE, INACTIVE, UNKNOWN,
+      self.cluster['type'] = "EMPTY"      # OBJECT, MULTI_OBJECT, BASE, EMPTY
+      self.cluster['relation'] = []
+      # [None, 'PART_OF', 'CONSISTS_OF', 'CONTAINED_BY', 'CONTAINS', 'STACKED_ON', 'STACKED_BELOW']
+      self.cluster['shape_type'] = None   # CONTAINER, ROLLABLE, FLAT_SURFACE
+
 
     #####################
     # BOTH UTILITIES
@@ -112,21 +123,35 @@ class ClusterState:
     ####################
     # WORLD UTILITIES
     ####################
+    # cluster_move_history should be in cluster.py
+    def previously_tried_grasp(self, grasp):
+      for prev_grasp in reversed(self.cluster_move_history):
+        [action, result] = prev_grasp 
+        if action[0] != "GRASP":
+          continue
+        prev_grasp = action[1]
+        if distance_3d(grasp, prev_grasp) <= .25 * INCH and result == False:
+          return True
+      return False
+
+    def add_to_history(self, action, result):
+      self.cluster_move_history.append([action,result])
+
     # part of WorldState?
     def find_attr(self, attr, key):
       # key = key_value[0]
       attr = self.cluster[attr]
       if (attr != None and len(attr) > 0 and attr[0] == key):
+          if key != None:
+            return attr[key] 
           return attr         # [key, value1 ...]
       return None
 
     def set_attr(self, attr, key, key_value):
-      key = key_value[0]
       attr = self.cluster[attr]
-      if (attr[0] == key):
-          attr[1] = key_value
-          # self.clusters[c_id][attr][i] = key_value
-          return True
+      if attr == None:
+        return False
+      cluster[attr][key] = key_value
       return False
 
     # for persistent world cluster
@@ -241,6 +266,69 @@ class ClusterState:
         BB = B
       return AA,BB
   
+    def obb_length_width(self):
+      obb     = self.cluster['obb'] 
+      pts = obb.points 
+      # 4: leftmost, bottommost, farthest
+      # 5: rightmost, bottommost, farthest
+      # 6: rightmost, bottommost, closest
+      # 7: leftmost, bottommost, closest
+      len1 = distance_3d(pts[4],pts[5])
+      len2 = distance_3d(pts[6],pts[7])
+      len3 = distance_3d(pts[5],pts[6])
+      len4 = distance_3d(pts[7],pts[4])
+      s1 = min(len1, len2)
+      s2 = min(len3, len4)
+      if s1 < s2:
+        return s2, s1
+      return s1, s2
+      
+    def near_side(self):
+      obb = self.cluster['obb'] 
+      # use all the bottommost points #4-#7
+      for pt_id,pt in enumerate(obb.points, 4):
+        [side, dist, pt1, pt2] = close_to_side(pt)
+        if pt1 != None:
+          return True
+      return False
+
+    def plan_move_from_side(self):
+      obb = self.cluster['obb'] 
+      min_dist = BIGNUM
+      retlst = []
+      # use all the bottommost points #4-#7
+      for pt_id,pt in enumerate(obb.points,4):
+        ret = close_to_side(pt)
+        [obb_pt, side, dist, pt0, pt1, pt2] = ret
+        if pt1 != None and dist < min_dist:
+          min_dist = dist
+          retlst.append(ret)
+      if len(retlst) == 0:
+        return None, None, None, None
+      if len(retlst) == 1:
+        return retlst[0]
+      else:
+        min_dist = BIGNUM
+        min_ret  = None
+        corner_min_dist = BIGNUM
+        corner_min_ret = None
+        for ret in retlst:
+          [obb_pt, side, dist, pt1, pt2] = ret
+          if min_dist < dist:
+            min_dist = dist
+            min_ret = ret
+          if side.startswith("corner:") and corner_min_dist < dist:
+            corner_min_dist = dist
+            corner_min_ret = ret
+            corner.append(ret)
+        if corner_min_ret != None:
+          return corner_min_ret
+        if len(retlst) == 2:
+          midpt = [(p0 + p1)/2 for a, b in zip(retlst[0][0], retlst[1][0])]
+          ret = close_to_side(midpt)
+          return ret
+        return min_ret
+
     #################
     # TBD
     #################

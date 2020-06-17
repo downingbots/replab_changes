@@ -48,8 +48,11 @@ class WidowX:
     def joint_callback(self, joint_state):
         self.joint_state = joint_state
 
-    def open_gripper(self, drop=False):
-        plan = self.gripper_plan(GRIPPER_DROP if drop else GRIPPER_OPEN)
+    def open_gripper(self, drop=False, gripper_value=None):
+        if gripper_value == None:
+          plan = self.gripper_plan(GRIPPER_DROP if drop else GRIPPER_OPEN)
+        else:
+          plan = self.gripper_plan(gripper_value)
         return self.gripper.execute(plan, wait=True)
 
     def add_bounds(self):
@@ -210,6 +213,8 @@ class WidowX:
         plan = self.arm_plan(NEUTRAL_VALUES)
         return self.commander.execute(plan, wait=True)
 
+    def move_to_place(self, x, y, z, angle, compensate_control_noise=True):
+        return move_to_grasp(self, x, y, z, angle, compensate_control_noise=True)
     def move_to_drop(self, angle=None):
         drop_positions = DROPPING_VALUES[:]
         if angle:
