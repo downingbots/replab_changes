@@ -48,6 +48,7 @@ class ClusterState:
                                                    # bounding box
                                               # shape_type: cyl, box, sphere...
       self.cluster_move_history = {}
+      self.cluster_grasp_history = {}
       if num_locations == None:
         self.cluster['num_locations'] = 0            
         self.cluster['location'] = []              # a history of locations
@@ -124,17 +125,24 @@ class ClusterState:
     # WORLD UTILITIES
     ####################
     # cluster_move_history should be in cluster.py
+    # Moved to goal.py
     def previously_tried_grasp(self, grasp):
-      for prev_grasp in reversed(self.cluster_move_history):
+      for prev_grasp in reversed(self.cluster_grasp_history):
         [action, result] = prev_grasp 
         if action[0] != "GRASP":
           continue
         prev_grasp = action[1]
         if distance_3d(grasp, prev_grasp) <= .25 * INCH and result == False:
+          print("previously tried grasp:", action, result)
           return True
       return False
 
+    def add_to_grasp_history(self, action, result):
+      print("add_to_history", action, result)
+      self.cluster_grasp_history.append([action,result])
+
     def add_to_history(self, action, result):
+      print("add_to_history", action, result)
       self.cluster_move_history.append([action,result])
 
     # part of WorldState?
@@ -287,24 +295,33 @@ class ClusterState:
       obb = self.cluster['obb'] 
       # use all the bottommost points #4-#7
       for pt_id,pt in enumerate(obb.points, 4):
-        [side, dist, pt1, pt2] = close_to_side(pt)
-        if pt1 != None:
+        [pt, side, dist, spt0, spt1, spt2] = close_to_side(pt)
+        # pt = check if point is close to side
+        # spnt0 = up slope point on top/bot side, None for l/r sides
+        # spnt1 = point on side
+        # spnt2 = point a minimum distance from side
+        if side != None and side != "no side":
           return True
       return False
 
     def plan_move_from_side(self):
+      # the bounding box is located next to the side.
+      # find the pont on the bounding box to start push at
       obb = self.cluster['obb'] 
       min_dist = BIGNUM
       retlst = []
-      # use all the bottommost points #4-#7
-      for pt_id,pt in enumerate(obb.points,4):
+      # use all the "closest" points #0 1 4 5
+      idx_lst = [0,1,4,5]
+      for idx_id,idx in enumerate(idx_lst):
+        pt = obb.points[idx]
         ret = close_to_side(pt)
         [obb_pt, side, dist, pt0, pt1, pt2] = ret
         if pt1 != None and dist < min_dist:
           min_dist = dist
           retlst.append(ret)
       if len(retlst) == 0:
-        return None, None, None, None
+        print("None ret:", ret)
+        return [None, None, None, None, None, None]
       if len(retlst) == 1:
         return retlst[0]
       else:
@@ -313,7 +330,7 @@ class ClusterState:
         corner_min_dist = BIGNUM
         corner_min_ret = None
         for ret in retlst:
-          [obb_pt, side, dist, pt1, pt2] = ret
+          [obb_pt, side, dist, pt0, pt1, pt2] = ret
           if min_dist < dist:
             min_dist = dist
             min_ret = ret
@@ -324,8 +341,15 @@ class ClusterState:
         if corner_min_ret != None:
           return corner_min_ret
         if len(retlst) == 2:
-          midpt = [(p0 + p1)/2 for a, b in zip(retlst[0][0], retlst[1][0])]
-          ret = close_to_side(midpt)
+          pt0a = retlst[0][3]
+          pt0b = retlst[1][3]
+          if pt0a != None and pt0b != None:
+            midpt = [(pt0a[i] + pt0b[i])/2 for i in range(3)]
+            ret = close_to_side(midpt)
+          elif pt0a != None:
+            ret = retlst[0]
+          else:
+            ret = retlst[1]
           return ret
         return min_ret
 

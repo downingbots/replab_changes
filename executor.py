@@ -701,9 +701,9 @@ class Executor:
                 threshold=.0003
                 if (gripper_gap > threshold):
                   print("eval_grasp:", gripper_gap, joints[0], pose[0])
-                  pick_result.append[w_cid, True]
+                  pick_result.append[w_cid, "GRASP", grasp, True]
                 else:
-                  pick_result.append[w_cid, False]
+                  pick_result.append[w_cid, "GRASP", grasp, False]
                 reached = self.widowx.move_to_vertical(prelift_z)
                 assert self.widowx.move_to_place(place[x], place[y],
                      prelift_z, grasp[th]), \

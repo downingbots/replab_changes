@@ -16,21 +16,6 @@ def pt_lst_eq(p1, p2):
 def pt_in_lst(p1, lst):
       return any(pt_lst_eq(p1,p2) for p2 in lst)
 
-def get_sector(x, y):
-      pc_b = BASE_PC_BOUNDS
-      # 0,0 is approx center of base
-      ul = pc_b[0]  # upper left
-      br = pc_b[2]  # bottom right
-      x_sz = (abs(ul[0]) + abs(br[0])) / SECTOR_SIZE
-      y_sz = (abs(ul[1]) + abs(br[1])) / SECTOR_SIZE
-      x_sect = min((SECTOR_SIZE-1),max(0,int((x + abs(ul[0])) / x_sz)))
-      # print(ul[1], y, y_sz)
-      y_sect = min((SECTOR_SIZE-1),max(0,int((y + abs(ul[1])) / y_sz)))
-      # print(ul[1], y_sect, y, y_sz)
-      sect = (x_sect * SECTOR_SIZE + y_sect)
-      # print(x_sect, y_sect, sect)
-      return sect
-
 def close_to_side(pt):
       desired_dist = 1 * INCH 
       pc_b = BASE_PC_BOUNDS
@@ -45,7 +30,7 @@ def close_to_side(pt):
           if d < desired_dist and d < maxval:
             min_d.append([i,j,d])
       if len(min_d) == 0:
-        return pt, "no side", 2*desired_dist, None, None
+        return pt, "no side", 2*desired_dist, None, None, None
       elif len(min_d) == 1:
         [i,j,d] = min_d[0]
         if j == 0:    # left/right side
@@ -67,7 +52,7 @@ def close_to_side(pt):
             side = "bottom right"
             spnt0 = [pt[i], pc_b[j*2][1-i] - desired_dist, pt[2] - desired_dist - .5*GRIPPER_LEN]
             spnt2 = [pt[i], pc_b[j*2][1-i] - desired_dist*2, pt[2]]
-        return pt, side, d, spnt1, spnt2
+        return pt, side, d, spnt0, spnt1, spnt2
       elif len(min_d) == 2:   # corner
         [i,j,d] = min_d[0]
         if j == 0:    
@@ -93,13 +78,28 @@ def close_to_side(pt):
             spnt1 = [pc_b[j*2][i], pc_b[j*2][1-i], pt[2]]
             spnt2 = [pc_b[j*2][i] + desired_dist*2, pc_b[j*2][1-i] - desired_dist*2, pt[2]]
         # pt = check if point is close to side
-        # spnt0 = up slope point on top/bot side, None for l/r sides
-        # spnt1 = point on side
-        # spnt2 = point a minimum distance from side
+        # spnt0 = up slope point on top/bot side, None for l/r sides (start point)
+        # spnt1 = point on side (middle point)
+        # spnt2 = point a minimum distance from side (destination point)
         return pt, side, d, spnt0, spnt1, spnt2
       else:
         printf("ERROR: close to",len(min_d)," sides!")
         return pt, None, None, None, None, None
+
+def get_sector(x, y):
+      pc_b = BASE_PC_BOUNDS
+      # 0,0 is approx center of base
+      ul = pc_b[0]  # upper left
+      br = pc_b[2]  # bottom right
+      x_sz = (abs(ul[0]) + abs(br[0])) / SECTOR_SIZE
+      y_sz = (abs(ul[1]) + abs(br[1])) / SECTOR_SIZE
+      x_sect = min((SECTOR_SIZE-1),max(0,int((x + abs(ul[0])) / x_sz)))
+      # print(ul[1], y, y_sz)
+      y_sect = min((SECTOR_SIZE-1),max(0,int((y + abs(ul[1])) / y_sz)))
+      # print(ul[1], y_sect, y, y_sz)
+      sect = (x_sect * SECTOR_SIZE + y_sect)
+      # print(x_sect, y_sect, sect)
+      return sect
 
 def compute_z_sectors_from_base(base_pc):
       sector_sz = SECTOR_SIZE  # depends on max object size vs. base sz
@@ -424,14 +424,14 @@ def line_intersection(line1, line2, dist = None):
     return x, y
 
 def pt_on_line_seg(line_seg, dist):
-    xdiff = (line1[0][0] - line1[1][0])
-    ydiff = (line1[0][1] - line1[1][1])
+    xdiff = (line_seg[0][0] - line_seg[1][0])
+    ydiff = (line_seg[0][1] - line_seg[1][1])
     if xdiff == 0:
-      return line1[0][0], line1[0][1]+dist
+      return line_seg[0][0], line_seg[0][1]+dist
     slope = ydiff / xdiff
-    dx = sqrt(dist * dist / (slope*slope+1))
+    dx = math.sqrt(dist * dist / (slope*slope+1))
     dy = slope * dx
-    return line1[0][0]+dx, line1[0][1]+dy
+    return line_seg[0][0]+dx, line_seg[0][1]+dy
     
 def add_color_slow(pc1,pc2):
    # simple N*M + 2N algorithm: unacceptably slow

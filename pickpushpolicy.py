@@ -387,7 +387,7 @@ class PickPushCollection(Policy):
           eval_grasp_action['EVA_SUCCESS'] = False
           eval_grasp_action['EVA_CLOSURE'] = 0
         # print("eval_grasp: ", threshold, manual)
-        self.world_clusters.clusters[w_c_id].add_to_history(action, result)
+        self.world_clusters.clusters[w_c_id].add_to_history([action, grasp], result)
         return eval_grasp_action
 
     # currently being done in "goal_plan"

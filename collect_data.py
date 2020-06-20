@@ -185,7 +185,8 @@ def main():
                 print(goal_plan)
                 # pick/place or push the clusters to become like a goal octomap
                 # success, err = executor.execute_grasp(grasp, grasps, confidences,  policy)
-                success, err = executor.execute_goal_plan(goal_plan)
+                pick_result, action_completed = executor.execute_goal_plan(goal_plan)
+                goal_state.record_plan_result(pick_result, action_completed)
                 executor.publish_grasps(grasps, grasp)
                 executor.record_grasp(grasp, grasps)
 
