@@ -12,6 +12,19 @@ BASE_HEIGHT_BOUNDS = (.39, .55)
 PLAYGROUND     = [(-.08,  -.08),
 		  ( .0,   .08)]
 
+# based on laser cut instructions
+# CALIBRATION_CORNERS = [(-.17, .13),
+#                        ( .17, .13),
+#                        ( .17,-.13),
+#                        (-.17,-.13)]
+
+# based on measurements (use these)
+CALIBRATION_CORNERS = [(-.17, .135),
+                       ( .17, .135),
+                       ( .17,-.135),
+                       (-.17,-.135)]
+# .168 vs .17
+
 # use rgb derived from transformed pc 
 # pickpush policy is based purely on this rgbd
 # rgb camera is: 480x640 (307200 pixels)
@@ -32,8 +45,9 @@ PC_DENSITY = 15000           # further reduction
 # Possibly could start with over-filtering a scene and later under-filtering
 # a scene (HIGH_FILTER, LOW_FILTER)
 # OCTOMAP_WARMUP       = 10    # number of octomap images before processing
-OCTOMAP_WARMUP       = 8    # number of octomap images before processing
-NUM_FILTER_SEGMENT   = 2    # number of additional plane segmentations to perform (min 0)
+# OCTOMAP_WARMUP       = 5   # number of octomap images before processing
+OCTOMAP_WARMUP       = 10   # number of octomap images before processing
+NUM_FILTER_SEGMENT   = 1    # number of additional plane segmentations to perform (min 0)
 
 FILTER_BASE          = True  
 # FILTER_BASE          = False  
@@ -58,7 +72,8 @@ INCH             = 0.0254
 GRIPPER_WIDTH    = 0.9 * INCH
 GRIPPER_LEN      = 1.0 * INCH
 GRIPPER_HEIGHT   = 1.0 * INCH
-MIN_GRIP_HEIGHT  = 0.25 * INCH
+# MIN_GRIP_HEIGHT  = 0.25 * INCH
+MIN_GRIP_HEIGHT  = 0.15 * INCH
 MIN_OBJ_HEIGHT   = 0.9 * INCH
 # MIN_OBJ_HEIGHT   = 0.2 * INCH
 # MIN_OBJ_HEIGHT   = 0.25 * INCH
@@ -77,7 +92,7 @@ COMPUTE_KEYPOINT   = False
 FAVOR_KEYPOINT     = False
 KP_OOB_THRESH = 5   
 OOB_THRESH    = 0
-MIN_NEIGHBOR_THRESH = 5
+MIN_NEIGHBOR_THRESH = 4
 
 IMG_WIDTH  = 640
 IMG_HEIGHT = 480

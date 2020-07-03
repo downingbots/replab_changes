@@ -16,75 +16,138 @@ def pt_lst_eq(p1, p2):
 def pt_in_lst(p1, lst):
       return any(pt_lst_eq(p1,p2) for p2 in lst)
 
+def check_bounds(x,y):
+      pc_b = BASE_PC_BOUNDS
+      ul = pc_b[0]  # upper left
+      br = pc_b[2]  # bottom right
+      if x <= ul[0]:
+        x = ul[0] + OCTOMAP_RESOLUTION
+      elif x >= br[0]:
+        x = br[0] - OCTOMAP_RESOLUTION
+      if y >= ul[1]:
+        x = ul[1] - OCTOMAP_RESOLUTION
+      elif y <= br[1]:
+        x = br[0] + OCTOMAP_RESOLUTION
+      return x,y
+
 def close_to_side(pt):
+      def compute_x_y(i, j):
+            # j for top/bot
+            # i for l/r
+            # ul = pc_b[0]  # upper left
+            # br = pc_b[2]  # bottom right
+            pc_b = BASE_PC_BOUNDS
+            desired_dist = 1 * INCH 
+            p_x = pc_b[i*2][0]
+            if (p_x < 0):
+              p_x1 = p_x + GRIPPER_WIDTH / 2
+              p_x2 = p_x + desired_dist*2 + GRIPPER_WIDTH / 2
+            else:
+              p_x1 = p_x - GRIPPER_WIDTH / 2
+              p_x2 = p_x - desired_dist*2 - GRIPPER_WIDTH / 2
+            p_y1 = pc_b[j*2][1]
+            if (p_y1 < 0):
+              p_y0 = p_y1 - desired_dist
+              p_y2 = p_y1 + desired_dist*2
+            else:
+              p_y0 = p_y1 + desired_dist
+              p_y2 = p_y1 - desired_dist*2
+            return p_x, p_x1, p_x2, p_y0, p_y1, p_y2
+
       desired_dist = 1 * INCH 
       pc_b = BASE_PC_BOUNDS
       # 0,0 is approx center of base
+      # BASE_PC_BOUNDS = [(-.17,  .15),  top right
+      # 		  ( .17,  .15),  top left
+      # 		  ( .17, -.15),  bottom left
+      # 		  (-.17, -.15)]  bottom right
       ul = pc_b[0]  # upper left
       br = pc_b[2]  # bottom right
       maxval = max(abs(pc_b[0][0])*2, abs(pc_b[0][1]*2))
       min_d = []
       for i in range(2):    # from left-right or top-bottom
         for j in range(2):  # from upper-left or bottom-right
-          d = abs(pc_b[j*2][i] - pt[i])
-          if d < desired_dist and d < maxval:
-            min_d.append([i,j,d])
+           p_x, p_x1, p_x2, p_y0, p_y1, p_y2 = compute_x_y(i, j)
+
+           # distance to corner
+           d_corner = distance_2d([p_x, p_y1], pt)
+           d_x      = abs(p_x - pt[0])
+           d_y      = abs(p_y1 - pt[1])
+
+           # twice d_x is same, twice d_y is same.
+           # at most, once both d_x and d_y are same at same time.
+           if ((d_x < desired_dist and d_x < maxval) and
+               (d_y < desired_dist and d_y < maxval)):
+             min_d = [i,j,d_x, d_y]
+             break
+           elif (d_x < desired_dist and d_x < maxval):
+             min_d = [i,j,d_x, None]
+           elif (d_y < desired_dist and d_y < maxval):
+             min_d = [i,j,None, d_y]
+      if len(min_d) == 1:
+        [i,j,d_x, d_y] = min_d
       if len(min_d) == 0:
-        return pt, "no side", 2*desired_dist, None, None, None
-      elif len(min_d) == 1:
-        [i,j,d] = min_d[0]
+        # return pt, "no side", 2*desired_dist, None, None, None
+        return None
+      elif len(min_d) == 1 and (d_x == None or d_y == None):
+        p_x, p_x1, p_x2, p_y0, p_y1, p_y2 = compute_x_y(i, j)
         if j == 0:    # left/right side
-          spnt0 = None
-          spnt1 = [pc_b[j*2][i], pt[1-i], pt[2]]
           if i == 0:
+            side = "top right"
+            spnt0 = None
+            spnt1 = [p_x1, pt[1-i], pt[2]]
+            spnt2 = [p_x2, pt[1-i], pt[2]]
+          else:
             side = "top left"
-            spnt2 = [pc_b[j*2][i] + desired_dist*2, pt[1-i], pt[2]]
-          else:
-            side = "bottom left"
-            spnt2 = [pc_b[j*2][i] - desired_dist*2, pt[1-i], pt[2]]
+            spnt0 = None
+            spnt1 = [p_x1, pt[1-i], pt[2]]
+            spnt2 = [p_x2, pt[1-i], pt[2]]
         else:         # top/bottom
-          spnt1 = [pt[i], pc_b[j*2][1-i], pt[2]]
+          spnt1 = [pt[i], p_y1, pt[2]]
           if i == 0:
-            side = "bottom left"
-            spnt0 = [pt[i], pc_b[j*2][1-i] - desired_dist, pt[2] - desired_dist - .5*GRIPPER_LEN]
-            spnt2 = [pt[i], pc_b[j*2][1-i] + desired_dist*2, pt[2]]
-          else:
             side = "bottom right"
-            spnt0 = [pt[i], pc_b[j*2][1-i] - desired_dist, pt[2] - desired_dist - .5*GRIPPER_LEN]
-            spnt2 = [pt[i], pc_b[j*2][1-i] - desired_dist*2, pt[2]]
-        return pt, side, d, spnt0, spnt1, spnt2
-      elif len(min_d) == 2:   # corner
-        [i,j,d] = min_d[0]
+            spnt0 = [pt[i], p_y0, pt[2] - desired_dist - .5*GRIPPER_LEN]
+            spnt2 = [pt[i], p_y2, pt[2]]
+          else:
+            side = "bottom left"
+            spnt0 = [pt[i], p_y0, pt[2] - desired_dist - .5*GRIPPER_LEN]
+            spnt2 = [pt[i], p_y2, pt[2]]
+        return pt, side, d1, d2, spnt0, spnt1, spnt2
+      elif len(min_d) == 1 and (d_x != None and d_y != None):
+        [i,j,d1, d2] = min_d[0]
+        p_x, p_x1, p_x2, p_y0, p_y1, p_y2 = compute_x_y(i, j)
         if j == 0:    
-          if i == 0: # top, left
-            side = "corner: top left"
-            spnt0 = [pc_b[j*2][i], pc_b[j*2][i] + desired_dist, pt[2] + desired_dist - .5*GRIPPER_LEN]
-            spnt1 = [pc_b[j*2][i], pc_b[j*2][i], pt[2]]
-            spnt2 = [pc_b[j*2][i] - desired_dist*2, pc_b[j*2][i] + desired_dist*2, pt[2]]
-          else:      # bottom, left
-            side = "corner: bottom left"
-            spnt0 = [pc_b[j*2][i], pc_b[j*2][i] - desired_dist, -desired_dist0 - .5*GRIPPER_LEN]
-            spnt1 = [pc_b[j*2][i], pc_b[j*2][i], pt[2]]
-            spnt2 = [pc_b[j*2][i] + desired_dist*2, pc_b[j*2][i] + desired_dist*2, pt[2]]
-        else:         
           if i == 0: # top, right
             side = "corner: top right"
-            spnt0 = [pc_b[j*2][i], pc_b[j*2][i] + desired_dist,  pt[2]-desired_dist - .5*GRIPPER_LEN]
-            spnt1 = [pc_b[j*2][i], pc_b[j*2][1-i], pt[2]]
-            spnt2 = [pc_b[j*2][i] - desired_dist*2, pc_b[j*2][1-i] - desired_dist*2, pt[2]]
+            spnt0 = [p_x, p_y0, pt[2] - desired_dist - .5*GRIPPER_LEN]
+            spnt1 = [p_x1, p_y1, pt[2]]
+            spnt2 = [p_x2, p_y2, pt[2]]
           else:      # bottom, right
             side = "corner: bottom right"
-            spnt0 = [pc_b[j*2][i], pc_b[j*2][1-i]-desired_dist, pt[2]-desired_dist - .5*GRIPPER_LEN]
-            spnt1 = [pc_b[j*2][i], pc_b[j*2][1-i], pt[2]]
-            spnt2 = [pc_b[j*2][i] + desired_dist*2, pc_b[j*2][1-i] - desired_dist*2, pt[2]]
+            spnt0 = [p_x, p_y0, pt[2] - desired_dist - .5*GRIPPER_LEN]
+            spnt1 = [p_x1, p_y1, pt[2]]
+            spnt2 = [p_x2, p_y2, pt[2]]
+        else:         
+          if i == 0: # top, left
+            side = "corner: top left"
+            spnt0 = [p_x, p_y0, pt[2] - desired_dist - .5*GRIPPER_LEN]
+            spnt1 = [p_x1, p_y1, pt[2]]
+            spnt2 = [p_x2, p_y2, pt[2]]
+          else:      # bottom, left
+            side = "corner: bottom left"
+            spnt0 = [p_x, p_y0, pt[2] - desired_dist - .5*GRIPPER_LEN]
+            spnt1 = [p_x1, p_y1, pt[2]]
+            spnt2 = [p_x2, p_y2, pt[2]]
         # pt = check if point is close to side
         # spnt0 = up slope point on top/bot side, None for l/r sides (start point)
         # spnt1 = point on side (middle point)
         # spnt2 = point a minimum distance from side (destination point)
-        return pt, side, d, spnt0, spnt1, spnt2
+        return pt, side, d1, d2, spnt0, spnt1, spnt2
       else:
-        printf("ERROR: close to",len(min_d)," sides!")
-        return pt, None, None, None, None, None
+        print("ERROR: close to",len(min_d)," sides! ", pt)
+        print("min_d: ", min_d)
+        # return pt, None, None, None, None, None
+        return None
 
 def get_sector(x, y):
       pc_b = BASE_PC_BOUNDS

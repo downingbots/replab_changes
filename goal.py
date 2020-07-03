@@ -30,6 +30,7 @@ class GoalState():
         # self.goal_octomap_no_rgb.append([pt[0],pt[1],pt[2]])
         break
 
+    self.active_goal = None
     self.goal_octomap_no_rgb = np.array(self.sorted_goal_octomap)[goal_non_base_idx:,:3]
     self.goal_octomap = self.sorted_goal_octomap[goal_non_base_idx:]
     self.kdtree = spatial.KDTree(self.goal_octomap_no_rgb)
@@ -41,6 +42,7 @@ class GoalState():
     self.min_samples = CLUSTER_MIN_SZ
     self.grasp_history  = []
     self.action_history = []
+    self.score_history = []
 
 
     # for computing scores of world state
@@ -92,7 +94,9 @@ class GoalState():
       return -elem[2]
 
     [x,y,z,rgb_idx] = [0,1,2,3]
-    sorted_octomap = sorted(octomap_pc, key=take_z_axis)
+    # always start with same size octomap to make better frame to frame comnparison?
+    octomap_pc_15K = self.goal_clusters.random_pc_subset(np.array(octomap_pc), PC_DENSITY)
+    sorted_octomap = sorted(octomap_pc_15K, key=take_z_axis)
     self.close_map = []
     self.far_map   = []
     self.unmapped  = []
@@ -163,6 +167,7 @@ class GoalState():
         self.unmapped.append(pt_i)
     sum_unmapped = len(self.unmapped) * (max_dist + self.MAX_COLOR_DIF)
     total_score = sum_color + sum_dist + sum_unmapped
+    self.record_score(total_score)
     return total_score
 
   def get_goal_info(self, policy, w_c_id, g_c_id):
@@ -173,17 +178,23 @@ class GoalState():
     dist = distance_3d(w_loc, g_loc)
     return [dist, w_loc, g_loc, w_obb, g_obb]
 
-  def goal_state.record_plan_result(pick_result, action_completed):
+  def record_score(self, score):
+    self.score_history.append(score)
+    print("score_history: ", self.score_history)
+
+  def record_plan_result(self, pick_result, action_completed):
     # [w_cid, "GRASP", grasp, False]
     self.grasp_history.append(pick_result)
     self.action_history.append(action_completed)
 
   def previously_tried_grasp(self, gs_w_cid, grasp):
-    # [w_cid, "GRASP", grasp, False]
-    for grasp_result in reversed(self.grasp_history):
-        [gr_w_cid, gr_action, gr_grasp, gr_result] = prev_grasp
-        if gr_action != "GRASP" or gr_w_cid != gs_w_cid:
+    for action in reversed(self.grasp_history):
+        gr_w_cid = action[0]
+        gr_action = action[1]
+
+        if gr_action != "PICK_PLACE" or gr_w_cid != gs_w_cid:
           continue
+        grasp = action[2]
         if distance_3d(grasp, gr_grasp) <= .25 * INCH:
           print("previously tried grasp:", gr_action, gr_result)
           return (not gr_result)
@@ -206,6 +217,26 @@ class GoalState():
     print("Compare Done")
     print("##############")
 
+    # for testing, and as a short-term hack, transpose w_best_match to g_best_match
+    # and use that to come up with the goal_plan
+    use_w_best_match = True
+    if use_w_best_match:
+      print("g_best_match:", self.goal_clusters.g_best_match)
+      g_w_best_match = [None for gc in self.goal_clusters.clusters]
+      for w_cid, gc_cid in enumerate(self.goal_clusters.w_best_match):
+        if gc_cid != None:
+          g_w_best_match[gc_cid] = w_cid
+      for gc_cid, w_cid in enumerate(self.goal_clusters.g_best_match):
+        if g_w_best_match[gc_cid] == None and w_cid != None and w_cid not in g_w_best_match:
+          g_w_best_match[gc_cid] = w_cid
+        elif self.goal_clusters.active(gc_cid) and g_w_best_match[gc_cid] == None:
+          print("no match for active goal_cid", gc_cid)
+          # if all world goals taken, may need to split an object or reduce number
+          # of segmentations made.
+    else:
+      g_w_best_match = self.goal_clusters.g_best_match
+    print("g_w_best_match:", g_w_best_match)
+
     policy.world_clusters.octobase = self.goal_clusters.w_combined_octobase, 
     for g_c_id,g_c in enumerate(self.goal_clusters.clusters):
       status = self.goal_clusters.clusters[g_c_id].cluster['status']
@@ -221,12 +252,13 @@ class GoalState():
           del self.goal_clusters.clusters[g_c_id].cluster['shape'][pt_i]
 
     self.goal_clusters.g_combined_octobase = self.goal_clusters.g_poss_base_tuples
-    # [w_c_id, g_c_id, dist, w_loc, g_loc, [action]]
+    # [w_c_id, g_c_id, dist1, dist2, w_loc, g_loc, [action]]
     for g_c_id,g_c in enumerate(self.goal_clusters.clusters):
       status = self.goal_clusters.clusters[g_c_id].cluster['status']
       if status != "ACTIVE":
         continue
-      if self.goal_clusters.g_best_match[g_c_id] is None:
+      # if self.goal_clusters.g_best_match[g_c_id] is None:
+      if g_w_best_match[g_c_id] is None:
         if g_c_id in self.goal_clusters.g_unmatched:
           # g_c_id to world cluster mapping doesn't exist. 
           # Check if world cluster to g_c_id mapping exists. 
@@ -310,7 +342,8 @@ class GoalState():
       elif g_c_id in self.goal_clusters.g_poss_base_tuples:
         continue
       else:
-        w_c_id = self.goal_clusters.g_best_match[g_c_id]
+        # w_c_id = self.goal_clusters.g_best_match[g_c_id]
+        w_c_id = g_w_best_match[g_c_id]
         goal_state = [w_c_id, g_c_id, "best_match"]
         goal_info = self.get_goal_info(policy, w_c_id, g_c_id)
         [dist, w_loc, g_loc, w_obb, g_obb] = goal_info
@@ -347,20 +380,32 @@ class GoalState():
             ln = (endpt[pt[0]], endpt[pt[1]])
             start_x,start_y = line_intersection((w_centroid, g_centroid), ln)
           except:
+            start_x,start_y = None, None
             continue
           if (w_obb_x_max >= start_x >= w_obb_x_min
               and w_obb_y_max >= start_y >= w_obb_y_min):
             break
+          else:
+            start_x,start_y = None, None
         if start_x == None or start_y == None:
           return None, None
         line_seg = ((start_x,start_y),(w_centroid[x],w_centroid[y]))
         end_x, end_y = pt_on_line_seg(line_seg, gi_dist)
-        return (start_x,start_y,gi_w_obb.centroid[z]), (end_x,end_y,gi_w_obb.centroid[z])
+        start_base_z = self.goal_clusters.base_z[get_sector(start_x, start_y)]
+        end_base_z = self.goal_clusters.base_z[get_sector(end_x, end_y)]
+        # adjust end_z to account for diff in base height
+        end_z = end_base_z - start_base_z + gi_w_obb.centroid[z]
+        start_x,start_y = check_bounds(start_x,start_y)
+        end_x,end_y = check_bounds(end_x,end_y)
+        return [start_x,start_y,gi_w_obb.centroid[z]], [end_x,end_y, end_z]
 
   def compute_theta(self, pt0, pt1, horiz = True):
     xdiff = (pt0[0] - pt1[0])
     ydiff = (pt0[1] - pt1[1])
-    slope = ydiff / xdiff
+    if xdiff > 0:
+      slope = ydiff / xdiff
+    else:
+      slope = BIGNUM
     if horiz == True:
       theta = math.atan(slope)             # slope angle in radians
     elif math.atan(slope) < np.pi / 2:
@@ -372,11 +417,15 @@ class GoalState():
   def compute_gripper_width(self,w_c_id, policy):
     l,w = policy.world_clusters.clusters[w_c_id].obb_length_width()
     # GRIPPER_OPEN = [0.027, 0.027]
-    gw  = min(.75*w, GRIPPER_WIDTH)
-    gws = gw / GRIPPER_WIDTH * GRIPPER_OPEN[0]
-    return [gw, gw]
+    # GRIPPER_CLOSED = [.003, .003]
+    gw  = min(.5*w, GRIPPER_WIDTH)
+    gws = gw / GRIPPER_WIDTH * (GRIPPER_OPEN[0] - GRIPPER_CLOSED[0]) + GRIPPER_CLOSED[0]
+    if gws > 1.57:
+      print("gripper width reduced from", gws)
+      gws = 1.56999
+    return [gws, gws]
 
-  def goal_plan(self, policy, grasps, confidences, goal_states, gs_adjacent_clusters):
+  def plan_goals(self, policy, grasps, confidences, goal_states, gs_adjacent_clusters):
     def w_g_dist(gs):
       return gs[3][0]
 
@@ -413,9 +462,10 @@ class GoalState():
       elif policy.world_clusters.clusters[gs_w_cid].near_side() and not self.goal_clusters.clusters[gs_g_cid].near_side():
         ret = policy.world_clusters.clusters[gs_w_cid].plan_move_from_side()
         if ret == None:
+          print("plan_move_from_side returns None")
           # why if near side????
           continue
-        [obb_pt, side, dist, pt0, pt1, pt2] = ret
+        [obb_pt, side, dist1, dist2, pt0, pt1, pt2] = ret
         # need to composate for half width of gripper for pt0, pt1?
         # side helps determine gripper open/close/theta
         if pt0 != None:
@@ -430,10 +480,12 @@ class GoalState():
         # try picking up w cluster and placing it to mapped location
         found = False
         cluster_grasps = []
+        cluster_conf   = []
         sum_conf = 0
         for grasp_id, [grasp, confidence] in enumerate(grasps):
           cluster_id = policy.world_clusters.cluster_contains(grasp)
           if cluster_id != gs_w_cid:
+            # print("grasp for wrong cluster: ", grasp_id, cluster_id, gs_w_cid)
             continue
           # if policy.world_clusters.clusters[gs_w_cid].previously_tried_grasp(grasp):
           if self.previously_tried_grasp(gs_w_cid, grasp):
@@ -441,26 +493,36 @@ class GoalState():
             print("previously failed grasp:",gs_w_cid)
             continue
           cluster_grasps.append(grasp)
-          cluster_conf.append(confidences[grasp_id])
-          sum_conf += confidences[grasp_id]
+          cluster_conf.append(confidence)
+          sum_conf += confidence
         if sum_conf > 0:
-          cluster_conf /= sum_conf
-          selected = np.random.choice(cluster_grasps, p = cluster_conf)
+          for i,cnf in enumerate(cluster_conf):
+            cluster_conf[i] /= sum_conf
+          selected_ind = np.random.choice(len(cluster_grasps), p = cluster_conf)
+          selected = cluster_grasps[selected_ind]
+          max_z = self.goal_clusters.base_z[get_sector(grasp[x], grasp[y])] - (2.1 * OCTOMAP_RESOLUTION)
+          if grasp[z] > max_z:
+            grasp[z] = max_z
           action = [gs_w_cid, "PICK_PLACE", grasp, gi_g_obb.centroid]
           found = True
 
         # try pushing
         if not found:
           start_pt, end_pt = self.centroid_push_start_end(gi_w_obb, gi_g_obb, gi_dist)
-          theta = self.compute_theta(start_pt,end_pt,horiz=True)
-          gw = self.compute_gripper_width(gs_w_cid, policy)
-          action = [gs_w_cid, "PUSH", start_pt, end_pt, theta, gw]
+          if start_pt == None or end_pt == None:
+            c = gi_w_obb.centroid
+            grasp = [c[0],c[1],c[2],0]
+            action = [gs_w_cid, "PICK_PLACE", grasp, gi_g_obb.centroid]
+          else:
+            theta = self.compute_theta(start_pt,end_pt,horiz=True)
+            gw = self.compute_gripper_width(gs_w_cid, policy)
+            action = [gs_w_cid, "PUSH", start_pt, end_pt, theta, gw]
       self.goal_plan[gs_id].append(action)
     return self.goal_plan
  
   def goal_plan_moves(self, policy, grasps, confidences):
     goal_state, gs_adjacent_clusters = self.get_goal_states(policy)
-    goal_moves = self.goal_plan(policy, grasps, confidences, goal_state, gs_adjacent_clusters)
+    goal_moves = self.plan_goals(policy, grasps, confidences, goal_state, gs_adjacent_clusters)
     return goal_moves
 
 # TODO:

@@ -47,8 +47,8 @@ class ClusterState:
       self.cluster['shape_attr'] = shape_attr      # ["name",value] pair
                                                    # bounding box
                                               # shape_type: cyl, box, sphere...
-      self.cluster_move_history = {}
-      self.cluster_grasp_history = {}
+      self.cluster_move_history = []
+      self.cluster_grasp_history = []
       if num_locations == None:
         self.cluster['num_locations'] = 0            
         self.cluster['location'] = []              # a history of locations
@@ -211,10 +211,10 @@ class ClusterState:
       # max & min changes over time, but max-min typically doesn't
       # 1 stdev -> 68%; 2 stdev -> 95%; 3 stdev -> 99.7%
       # pdf = probability distribution function
-      c1min = self.clusters[c_id]['obb'].min
-      c2min = pc_cluster['obb'].min
-      c1max = self.clusters[c_id]['obb'].max
-      c2max = pc_cluster['obb'].max
+      c1min = self.clusters[c_id]['obb'].get_min()
+      c2min = pc_cluster['obb'].get_min()
+      c1max = self.clusters[c_id]['obb'].get_max()
+      c2max = pc_cluster['obb'].get_max()
       #
       min_mean, min_stddev = self.get_mean_stddev(c_id,'obb_attr',"MIN_DIF_STATS") 
       max_mean, min_mean= self.get_mean_stddev(c_id,'obb_attr',"MAX_DIF_STATS") 
@@ -295,7 +295,10 @@ class ClusterState:
       obb = self.cluster['obb'] 
       # use all the bottommost points #4-#7
       for pt_id,pt in enumerate(obb.points, 4):
-        [pt, side, dist, spt0, spt1, spt2] = close_to_side(pt)
+        ret = close_to_side(pt)
+        if ret == None:
+          return False
+        [pt, side, dist1, dist2, spt0, spt1, spt2] = ret
         # pt = check if point is close to side
         # spnt0 = up slope point on top/bot side, None for l/r sides
         # spnt1 = point on side
@@ -312,30 +315,46 @@ class ClusterState:
       retlst = []
       # use all the "closest" points #0 1 4 5
       idx_lst = [0,1,4,5]
+      goal_z = obb.centroid[2]
+      
       for idx_id,idx in enumerate(idx_lst):
         pt = obb.points[idx]
+        pt[2] = goal_z
         ret = close_to_side(pt)
-        [obb_pt, side, dist, pt0, pt1, pt2] = ret
-        if pt1 != None and dist < min_dist:
-          min_dist = dist
+        if ret == None:
+          continue
+        [obb_pt, side, dist1, dist2, pt0, pt1, pt2] = ret
+        if pt1 != None and ((dist1 != None and dist1 < min_dist) or
+                            (dist2 != None and dist2 < min_dist)):
+          if (dist1 != None and dist1 < min_dist):
+            min_dist = dist1
+          if (dist2 != None and dist2 < min_dist):
+            min_dist = dist2
           retlst.append(ret)
       if len(retlst) == 0:
         print("None ret:", ret)
-        return [None, None, None, None, None, None]
+        return None
+        # return [None, None, None, None, None, None]
       if len(retlst) == 1:
         return retlst[0]
       else:
         min_dist = BIGNUM
         min_ret  = None
-        corner_min_dist = BIGNUM
+        corner_min_dist = None
         corner_min_ret = None
         for ret in retlst:
-          [obb_pt, side, dist, pt0, pt1, pt2] = ret
-          if min_dist < dist:
-            min_dist = dist
+          [obb_pt, side, dist1, dist2, pt0, pt1, pt2] = ret
+          if pt1 != None and ((dist1 != None and dist1 < min_dist) or
+                              (dist2 != None and dist2 < min_dist)):
+            if (dist1 != None and dist1 < min_dist):
+              min_dist = dist1
+            if (dist2 != None and dist2 < min_dist):
+              min_dist = dist2
+            if dist1 != None and dist2 != None:
+              corner_min_dist = min_dist
             min_ret = ret
-          if side.startswith("corner:") and corner_min_dist < dist:
-            corner_min_dist = dist
+          if side.startswith("corner:") and corner_min_dist != None:
+            corner_min_dist = dist1
             corner_min_ret = ret
             corner.append(ret)
         if corner_min_ret != None:

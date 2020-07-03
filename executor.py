@@ -50,100 +50,63 @@ class Executor:
 
     def init_manual_grasp_calibration_history(self):
         grasp_history = [
-                       [0, [-0.00082, -0.01508, 0.4751, -0.21755]],
-                       [1, [-0.10245, 0.00702, 0.4826, -0.06402]],
-                       [2, [-0.15773, 0.0895, 0.4826, -0.17537]],
-                       [3, [0.02615, -0.09245, 0.4826, -0.16235]],
-                       [4, [-0.06592, 0.12449, 0.4801, -0.14054]],
-                       [5, [0.05676, -0.07912, 0.4826, 0.03237]],
-                       [6, [0.09989, -0.1333, 0.39625, -0.83611]],
-                       [7, [0.05079, -0.07826, 0.4876, 0.25279]],
-                       [8, [-0.05168, 0.1272, 0.4826, -0.18158]],
-                       [9, [0.10369, -0.13674, 0.39625, -0.54639]],
-                       [10, [-0.06796, 0.10486, 0.4801, -0.0684]],
-                       [11, [0.09286, -0.14802, 0.4825, 0.0414]],
-                       [12, [0.10369, -0.13674, 0.39625, -0.54639]],
-                       [13, [-0.06796, 0.10486, 0.4801, -0.0684]],
-                       [14, [0.09286, -0.14802, 0.4825, 0.0414]],
-                       [15, [-0.06795, 0.10472, 0.4801, -0.09991]],
-                       [16, [0.09286, -0.14802, 0.4825, 0.0414]],
-                       [17, [0.01294, -0.08313, 0.4826, 0.00401]],
-                       [18, [0.09237, -0.1478, 0.48125, 0.18493]],
-                       [19, [0.04015, -0.13574, 0.4826, -0.00422]],
-                       [20, [-0.08985, -0.10168, 0.4876, -0.0268]],
-                       [21, [0.06368, 0.13282, 0.4726, 0.56394]],
-                       [22, [0.03994, 0.08068, 0.4776, 0.11742]],
-                       [23, [-0.05582, 0.02392, 0.4801, -0.05587]],
-                       [24, [-0.01814, -0.06826, 0.4801, -0.75024]],
-                       [25, [-0.12386, -0.04147, 0.47375, -0.08003]],
-                       [26, [-0.01004, 0.07502, 0.4801, 0.04323]],
-                       [27, [-0.02633, -0.06617, 0.47625, 0.59637]],
-                       [28, [0.08493, 0.07904, 0.46875, 0.06513]],
-                       [29, [0.06057, 0.0392, 0.47875, -0.52877]],
-                       [30, [-0.15401, 0.0859, 0.4801, -0.14314]],
-                       [31, [-0.00461, -0.13922, 0.4826, -0.02725]],
-                       [32, [-0.01709, -0.05971, 0.4801, -0.01963]],
-                       [33, [-0.1552, 0.13042, 0.4876, -0.31355]],
-                       [34, [-0.04139, -0.1313, 0.4851, 0.2989]],
-                       [35, [-0.04166, -0.13183, 0.4851, 0.32844]],
-                       [36, [-0.04163, -0.13174, 0.4851, 0.3428]],
-                       [37, [0.05679, -0.1403, 0.4826, 0.11431]],
-                       [38, [-0.04154, -0.13146, 0.4851, 0.25263]],
-                       [39, [0.16071, -0.01325, 0.4801, -0.78173]],
-                       [40, [-0.03693, 0.14142, 0.47375, 0.18383]],
-                       [41, [0.16071, -0.01325, 0.4801, -0.78173]],
-                       [42, [0.16979, -0.02375, 0.4726, -0.79948]],
-                       [43, [-0.10207, -0.13158, 0.4901, -0.30687]],
-                       [44, [-0.16716, 0.04625, 0.44375, -0.66597]]
+(0, [0.12341, 0.04697, 0.46375, -0.07294]),
+(1, [0.12386, -0.05114, 0.46256, -0.58364]),
+(2, [-0.05186, -0.08428, 0.48006, -0.07336]),
+(3, [0.08691, -0.10828, 0.46875, 0.21787]),
+(4, [-0.05752, 0.03361, 0.46875, -0.00793]),
+(5, [-0.0625, -0.09926, 0.47125, -0.02766]),
+(6, [0.14064, -0.04582, 0.46256, 0.04647]),
+(7, [0.14064, -0.04582, 0.46256, 0.04647]),
+(8, [0.08691, -0.10828, 0.46875, 0.21787]),
+(9, [-0.05752, 0.03361, 0.46875, -0.00793]),
+(10, [-0.0625, -0.09926, 0.47125, -0.02766]),
+(11, [0.14064, -0.04582, 0.46256, 0.04647]),
+(12, [-0.05752, 0.03361, 0.46875, -0.00793]),
+(13, [0.12341, 0.04697, 0.46375, -0.07294]),
+(14, [0.12386, -0.05114, 0.46256, -0.58364]),
+(15, [-0.05186, -0.08428, 0.48006, -0.07336]),
+(16, [0.12591, -0.05429, 0.46375, -0.21593]),
+(17, [0.11575, -0.07925, 0.47625, -0.51789]),
+(18, [0.10003, 0.03178, 0.46625, -0.11889]),
+(19, [0.04375, 0.0199, 0.47625, 0.0]),
+(20, [-0.0282, -0.03633, 0.47625, -0.35073]),
+(21, [-0.0282, -0.03633, 0.47625, -0.35073]),
+(22, [0.07281, 0.14531, 0.43625, -0.06657]),
+(23, [0.07583, 0.13403, 0.46875, -0.09029]),
+(24, [-0.12606, 0.06417, 0.47125, -0.10934]),
+(25, [-0.04989, 0.12983, 0.47625, 0.10082]),
+(26, [-0.05029, -0.10621, 0.47375, -0.26355]),
                        ]
 
-
         grasp_delta_history = [
- [0, [-0.015000000000000001, -0.0075, 0, -0.47123889803846897, 'EXECUTE_GRASP']],
- [1, [-0.02, 0.029999999999999995, 0, 0, 'EXECUTE_GRASP']],
- [2, [-0.024999999999999998, 0.04750000000000001, 0, 0, 'EXECUTE_GRASP']],
- [3, [0, 0, 0, 0, 'EXECUTE_GRASP']],
- [4, [0, 0.029999999999999995, 0, 0.15707963267948966, 'EXECUTE_GRASP']],
- [5, [-0.027499999999999997, -0.01, 0, 0, 'EXECUTE_GRASP']],
- [6, [-0.04750000000000001, -0.06000000000000002, 0, 0, 'EXECUTE_GRASP']],
- [7, [0.015000000000000001, 0.0175, 0, 0, 'EXECUTE_GRASP']],
- [8, [0, 0.027499999999999997, 0, 0, 'EXECUTE_GRASP']],
- [9, [-0.05750000000000001, -0.06000000000000001, 0, -0.47123889803846897, 'EXECUTE_GRASP']],
- [10, [0, 0.029999999999999995, 0, 0.15707963267948966, 'EXECUTE_GRASP']],
- [11, [-0.045000000000000005, 0, 0, -1.0995574287564276, 'EXECUTE_GRASP']],
- [12, [-0.05750000000000001, -0.06000000000000001, 0, -0.47123889803846897, 'EXECUTE_GRASP']],
- [13, [0, 0.029999999999999995, 0, 0.15707963267948966, 'EXECUTE_GRASP']],
- [14, [-0.045000000000000005, 0, 0, -1.0995574287564276, 'EXECUTE_GRASP']],
- [15, [-0.02, -0.0075, 0, -0.3141592653589793, 'EXECUTE_GRASP']],
- [16, [-0.032499999999999994, -0.005, 0, -1.0995574287564276, 'EXECUTE_GRASP']],
- [17, [0.01, -0.015000000000000001, 0, 0, 'EXECUTE_GRASP']],
- [18, [0, -0.024999999999999998, 0, -0.6283185307179586, 'EXECUTE_GRASP']],
- [19, [-0.0375, -0.0225, 0, 0, 'EXECUTE_GRASP']],
- [20, [-0.05250000000000001, 0.015000000000000001, 0, 0, 'EXECUTE_GRASP']],
- [21, [0.02, 0.0125, 0, 0, 'EXECUTE_GRASP']],
- [22, [-0.0075, 0.015000000000000001, 0, 0, 'EXECUTE_GRASP']],
- [23, [-0.029999999999999995, 0.0175, 0, 0.47123889803846897, 'EXECUTE_GRASP']],
- [24, [-0.024999999999999998, 0.0125, 0, -0.7853981633974483, 'EXECUTE_GRASP']],
- [25, [-0.0175, -0.032499999999999994, 0, 1.413716694115407, 'EXECUTE_GRASP']],
- [26, [-0.0075, 0.0175, 0, -2.0420352248333655, 'EXECUTE_GRASP']],
- [27, [-0.04750000000000001, 0, 0, 0, 'EXECUTE_GRASP']],
- [28, [0.01, 0, 0, 1.413716694115407, 'EXECUTE_GRASP']],
- [29, [0.01, 0.0025, 0, 1.8849555921538759, 'EXECUTE_GRASP']],
- [30, [-0.0125, 0.0375, 0, 0, 'EXECUTE_GRASP']],
- [31, [-0.045, -0.015, 0, 0, 'EXECUTE_GRASP']],
- [32, [-0.0325, 0, 0, 0.3141592653589793, 'EXECUTE_GRASP']],
- [33, [-0.0275, 0.0475, 0, 0.9424777960769379, 'EXECUTE_GRASP']],
- [34, [-0.04750000000000001, 0, 0, 0.6283185307179586, 'EXECUTE_GRASP']],
- [35, [0, 0, 0, 0, 'EXECUTE_GRASP']],
- [36, [-0.0175, 0, 0, 0.6283185307179586, 'EXECUTE_GRASP']],
- [37, [-0.03, -0.03, 0, 0, 'EXECUTE_GRASP']],
- [38, [-0.0075, -0.0075, 0, 0, 'EXECUTE_GRASP']],
- [39, [0.0025, 0, 0, 0.3141592653589793, 'EXECUTE_GRASP']],
- [40, [0, 0.02, 0, -2.0420352248333655, 'EXECUTE_GRASP']],
- [41, [0, -0.015, 0, 0, 'EXECUTE_GRASP']],
- [42, [0, -0.0075, 0, 0, 'EXECUTE_GRASP']],
- [43, [-0.0575, 0, 0, 0, 'EXECUTE_GRASP']],
- [44, [-0.025, -0.0245, 0, -0.3141592653589793, 'EXECUTE_GRASP']]
+(0, [0.01, -0.005000000000000001, 0, 0.6283185307179586, 'EXECUTE_GRASP']),
+(1, [-0.015000000000000001, -0.027499999999999997, 0, 0, 'EXECUTE_GRASP']),
+(2, [-0.04, 0, 0, -0.15707963267948966, 'EXECUTE_GRASP']),
+(3, [-0.02, -0.034999999999999996, 0, -0.6283185307179586, 'EXECUTE_GRASP']),
+(4, [-0.032499999999999994, 0.015000000000000001, 0, -0.6283185307179586, 'EXECUTE_GRASP']),
+(5, [-0.05000000000000001, 0.0025, 0, -0.3141592653589793, 'EXECUTE_GRASP']),
+(6, [0, -0.0225, 0, -0.3141592653589793, 'EXECUTE_GRASP']),
+(7, [0, -0.0225, 0, -0.3141592653589793, 'EXECUTE_GRASP']),
+(8, [0.0, -0.024999999999999998, 0, -0.6283185307179586, 'EXECUTE_GRASP']),
+(9, [-0.0175, 0.015000000000000001, 0, -0.47123889803846897, 'EXECUTE_GRASP']),
+(10, [-0.024999999999999998, 0.0125, 0, -0.3141592653589793, 'EXECUTE_GRASP']),
+(11, [-0.0125, -0.024999999999999998, 0, -0.15707963267948966, 'EXECUTE_GRASP']),
+(12, [-0.05000000000000001, 0.0075, 0, -0.7853981633974483, 'EXECUTE_GRASP']),
+(13, [0.01, -0.005000000000000001, 0, 0.6283185307179586, 'EXECUTE_GRASP']),
+(14, [-0.015000000000000001, -0.027499999999999997, 0, 0, 'EXECUTE_GRASP']),
+(15, [-0.04, 0, 0, -0.15707963267948966, 'EXECUTE_GRASP']),
+(16, [0, -0.027499999999999997, 0, 0.15707963267948966, 'EXECUTE_GRASP']),
+(17, [0, -0.0225, 0, 0.47123889803846897, 'EXECUTE_GRASP']),
+(18, [0.005, 0, 0, 0.15707963267948966, 'EXECUTE_GRASP']),
+(19, [-0.005, 0.0075, 0, -0.3141592653589793, 'EXECUTE_GRASP']),
+(20, [-0.034999999999999996, -0.0075, 0, 0, 'EXECUTE_GRASP']),
+(21, [-0.032499999999999994, -0.005, 0, 0, 'EXECUTE_GRASP']),
+(22, [0.02, 0, 0, 0, 'EXECUTE_GRASP']),
+(23, [0.0175, 0.0075, 0, 0, 'EXECUTE_GRASP']),
+(24, [-0.029999999999999995, 0.034999999999999996, 0, -0.15707963267948966, 'EXECUTE_GRASP']),
+(25, [0, 0.034999999999999996, 0, 0, 'EXECUTE_GRASP']),
+(26, [-0.04750000000000001, 0, 0, 0, 'EXECUTE_GRASP']),
  ]
         for i, g_h in enumerate(grasp_history):
           [num, g] = grasp_history[i]
@@ -527,13 +490,19 @@ class Executor:
         print("--------------------")
         print("grasp_history:")
         for i, [grasp, grasp_delta, result] in enumerate(self.manual_grasp_calibration_history):
-          print(i, grasp)
+          if i+1 < len(self.manual_grasp_calibration_history):
+            print(i, grasp) # future : add trailing comma
+          else:
+            print(i, grasp)
           # self.robot_coordinates.append((pose.x, pose.y, pose.z))
           self.robot_coordinates.append((grasp[0] + grasp_delta[0], grasp[1] + grasp_delta[1], grasp[2] + grasp_delta[2]))
         print("--------------------")
         print("grasp_delta_history:")
         for i, [grasp, grasp_delta, result] in enumerate(self.manual_grasp_calibration_history):
-          print(i, grasp_delta)
+          if i+1 < len(self.manual_grasp_calibration_history):
+            print(i, grasp_delta) # future : add trailing comma
+          else:
+            print(i, grasp_delta)
           self.camera_coordinates.append((grasp[0], grasp[1], grasp[2]))
         print("--------------------")
         print("sector_grasp_delta:")
@@ -554,7 +523,7 @@ class Executor:
     def set_calibration(self, T_F):
         self.calibration_mode = T_F
 
-    def calibrate_grasp(self, grasps, confidences = None, policy = None, manual_label=False):
+    def calibrate_grasp(self, grasps, confidences = None, policy = None, manual_label=False, corners_only = False):
         try:
             action = "GRASP"
             # set values for initial grasp
@@ -568,11 +537,13 @@ class Executor:
               [new_x, new_y, new_z, new_theta] = grasp
               print("grasps:",grasp)
               print("grasp: ",new_x, new_y, new_z, new_theta)
-              c_id = policy.get_grasp_cluster(grasp)
-              # if c_id == None or c_id in visited_c_id:
-              #   continue
-              # else:
-              #   visited_c_id.append(c_id)
+        
+              if not corners_only:
+                c_id = policy.get_grasp_cluster(grasp)
+                if c_id == None or c_id in visited_c_id:
+                  continue
+                else:
+                  visited_c_id.append(c_id)
             
               prelift_z = min(PRELIFT_HEIGHT, (new_z - GRIPPER_OFFSET - .02))
               lift_z = new_z - GRIPPER_OFFSET
@@ -602,6 +573,8 @@ class Executor:
                   print('Attempting grasp: (%.4f, %.4f, %.4f, %.4f)'
                         % (calib_new_x, calib_new_y, calib_new_z, calib_new_theta))
                   try:
+                    assert self.widowx.orient_to_target(
+                        calib_new_x, calib_new_y), 'Failed to orient to target'
                     assert self.widowx.move_to_grasp(calib_new_x, calib_new_y, calib_new_z, calib_new_theta), \
                       'Failed to reach pre-lift pose'
 
@@ -616,6 +589,7 @@ class Executor:
                     break
                   if new_action == "NEXT_IMAGE":
                     self.manual_grasp_calibration_print_history()
+                    self.widowx.move_to_neutral()
                     return True, 1
                   elif new_action == "EXECUTE_GRASP":
                     break
@@ -641,12 +615,20 @@ class Executor:
                 pose =  self.get_pose()
                 joints = self.widowx.get_joint_values()
                 # grasps in eval_grasp_action expects confidences
-                eval_grasp_action = policy.evaluate_grasp(grasp, grasps, pose, joints)
-                self.manual_grasp_calibration_history.append([grasp, grasp_delta, eval_grasp_action['EVA_SUCCESS']])
-                if eval_grasp_action['EVA_SUCCESS']:
-                  print("grasp successful based upon gripper servo", eval_grasp_action['EVA_CLOSURE'])
+                if corners_only:
+                  c_id = 0
+                  grasp_result = True
                 else:
-                  print("grasp unsuccessful based upon gripper servo", eval_grasp_action['EVA_CLOSURE'])
+                  c_id = policy.get_grasp_cluster(grasp)
+                  eval_grasp_action = policy.evaluate_grasp(c_id, "GRASP", grasp, grasps, pose, joints)
+                  eval_grasp_action = policy.evaluate_grasp(c_id, "GRASP", grasp, grasps, pose, joints)
+                  grasp_result = eval_grasp_action['EVA_CLOSURE']
+                  
+                self.manual_grasp_calibration_history.append([grasp, grasp_delta, grasp_result])
+                if grasp_result:
+                  print("grasp successful based upon gripper servo", grasp_result) 
+                else:
+                  print("grasp unsuccessful based upon gripper servo",  grasp_result)
 
                 self.manual_grasp_calibration_print_history()
                 print("move_to_vert")
@@ -656,6 +638,7 @@ class Executor:
                 self.widowx.move_to_neutral()
                 self.record_action(action,"move_to_neutral")
                 eval_world_action = policy.evaluate_world()
+            self.widowx.move_to_neutral()
             return True, 1
         except Exception as e:
             print('Error executing grasp -- returning...')
@@ -675,6 +658,9 @@ class Executor:
         action_completed = []
         for goal_plan_info in goal_plan:
           try:
+              if len(goal_plan_info) < 5:
+                print("incomplete goal plan: ", goal_plan_info)
+                continue
               gs_w_cid    = goal_plan_info[0]
               gs_g_cid    = goal_plan_info[1]
               gs_desc     = goal_plan_info[2]
@@ -686,7 +672,8 @@ class Executor:
               if action == "PICK_PLACE":
                 [w_cid, action_name, grasp, place] = action_info
                 self.widowx.open_gripper()
-                assert self.widowx.orient_to_pregrasp(
+                # assert self.widowx.orient_to_pregrasp(
+                assert self.widowx.orient_to_target(
                     grasp[x], grasp[y]), 'Failed to orient to target'
                 prelift_z = min(PRELIFT_HEIGHT, (grasp[z] - GRIPPER_OFFSET - .02))
                 assert self.widowx.move_to_grasp(grasp[x], grasp[y],
@@ -694,18 +681,20 @@ class Executor:
                     'Failed to reach pre-lift pose'
                 reached = self.widowx.move_to_vertical(grasp[z])
                 self.widowx.close_gripper()
-                pose = self.get_pose()
-                joints = self.widowx.get_joint_values()
-                print("joints:",joints)
-                gripper_gap = joints[0] - np.array(GRIPPER_CLOSED[0])
                 threshold=.0003
-                if (gripper_gap > threshold):
-                  print("eval_grasp:", gripper_gap, joints[0], pose[0])
-                  pick_result.append[w_cid, "GRASP", grasp, True]
+                manual = False
+                grip_rslt, grip_err = self.widowx.eval_grasp(threshold, manual)
+                if grip_rslt:
+                  print("GRASP SUCCEEDED:", grip_rslt, grip_err)
+                  pick_result.append([w_cid, "GRASP", grasp, True])
                 else:
-                  pick_result.append[w_cid, "GRASP", grasp, False]
+                  print("GRASP FAILED:", grip_rslt, grip_err)
+                  pick_result.append([w_cid, "GRASP", grasp, False])
                 reached = self.widowx.move_to_vertical(prelift_z)
-                assert self.widowx.move_to_place(place[x], place[y],
+                # assert self.widowx.orient_to_pregrasp(
+                assert self.widowx.orient_to_target(
+                    place[x], place[y]), 'Failed to orient to target'
+                assert self.widowx.move_to_grasp(place[x], place[y],
                      prelift_z, grasp[th]), \
                     'Failed to reach pre-lift pose'
                 reached = self.widowx.move_to_vertical(place[z])
@@ -714,24 +703,32 @@ class Executor:
 
               elif action == "PUSH_FROM_EDGE":
                 [w_cid, action_name, side, pt0, pt1, pt2, theta, gw] = action_info
-                prelift_z = min(PRELIFT_HEIGHT, (pt0[z] - GRIPPER_OFFSET - .02))
                 self.widowx.open_gripper(gripper_value = gw)
-                assert self.widowx.orient_to_pregrasp(
-                    pt0[x], pt0[y]), 'Failed to orient to target'
-                assert self.widowx.move_to_grasp(pt0[x], pt0[y], prelift_z, theta), \
-                    'Failed to reach pre-lift pose'
-                reached = self.widowx.move_to_vertical(pt0[z])
+
+                if pt0 != None:
+                  prelift_z = min(PRELIFT_HEIGHT, (pt0[z] - GRIPPER_OFFSET - .02))
+                  # assert self.widowx.orient_to_pregrasp(
+                  assert self.widowx.orient_to_target(
+                      pt0[x], pt0[y]), 'Failed to orient to target'
+                  assert self.widowx.move_to_grasp(pt0[x], pt0[y], prelift_z, theta), \
+                      'Failed to reach pre-lift pose'
+                  reached = self.widowx.move_to_vertical(pt0[z])
+                # the following orient failed:
+                assert self.widowx.orient_to_target(
+                    pt1[x], pt1[y]), 'Failed to orient to target'
                 assert self.widowx.move_to_grasp(pt1[x], pt1[y], pt1[z], theta), \
                     'Failed to reach pre-lift pose'
+                assert self.widowx.orient_to_target(
+                    pt2[x], pt2[y]), 'Failed to orient to target'
                 assert self.widowx.move_to_grasp(pt2[x], pt2[y], pt2[z], theta), \
                     'Failed to reach pre-lift pose'
                 prelift_z = min(PRELIFT_HEIGHT, (pt2[z] - GRIPPER_OFFSET - .02))
-                reached = self.widowx.move_to_vertical(pt0[z])
+                reached = self.widowx.move_to_vertical(prelift_z)
 
               elif action == "ROTATE":
                 [w_cid, action_name, top_ctr_pt, theta, gw, rads] = action_info
                 self.widowx.open_gripper(gripper_value = gw)
-                assert self.widowx.orient_to_pregrasp(
+                assert self.widowx.orient_to_target(
                     top_ctr_pt[x], top_ctr_pt[y]), 'Failed to orient to target'
                 prelift_z = min(PRELIFT_HEIGHT, (top_ctr_pt[z] - GRIPPER_OFFSET - .02))
                 assert self.widowx.move_to_grasp(top_ctr_pt[x], top_ctr_pt[y], prelift_z, th), \
@@ -743,16 +740,50 @@ class Executor:
 
               elif action == "NUDGE" or action == "PUSH":
                 [w_cid, action_name, start_pt, end_pt, theta, gw] = action_info
-                assert self.widowx.orient_to_pregrasp(
+                assert self.widowx.orient_to_target(
                     start_pt[x], start_pt[y]), 'Failed to orient to target'
                 prelift_z = min(PRELIFT_HEIGHT, (start_pt[z] - GRIPPER_OFFSET - .02))
                 self.widowx.open_gripper(gripper_value = gw)
                 assert self.widowx.move_to_grasp(start_pt[x], start_pt[y], prelift_z, theta), \
                     'Failed to reach pre-lift pose'
                 reached = self.widowx.move_to_vertical(start_pt[z])
-                assert self.widowx.move_to_grasp(end_pt[x], end_pt[y], end_pt[z], theta), \
+
+                next_pt = start_pt
+                xdiff = (start_pt[x] - end_pt[x])
+                ydiff = (start_pt[y] - end_pt[y])
+                if xdiff == 0:
+                  dx = 0
+                  dy = INCH / 2.0
+                else:
+                  slope = ydiff / xdiff
+                  dist = INCH / 2.0
+                  dx = math.sqrt(dist * dist / (slope*slope+1))
+                  dy = slope * dx
+                  if (start_pt[x] > end_pt[x] and dx > 0):
+                    dx *= -1
+                  if (start_pt[y] > end_pt[y] and dy > 0):
+                    dy *= -1
+                print("next_pt:")
+                while True:
+                  prev_pt = list(next_pt)
+                  next_pt[x] += dx
+                  next_pt[y] += dy
+                  next_pt[z] = min(start_pt[z],end_pt[z])
+                  print(prev_pt,next_pt)
+                  if ((prev_pt[x] > end_pt[x] and next_pt[x] <= end_pt[x]) or
+                      (prev_pt[x] < end_pt[x] and next_pt[x] >= end_pt[x])):
+                    break
+                  assert self.widowx.orient_to_target(
+                    next_pt[x], next_pt[y]), 'Failed to orient to target'
+                  assert self.widowx.move_to_grasp(next_pt[x], next_pt[y], next_pt[z], theta), \
                     'Failed to reach pre-lift pose'
-                reached = self.widowx.move_to_vertical(end_pt[z])
+                # end while next_pt
+                print("end_pt:", end_pt)
+                assert self.widowx.orient_to_target(
+                    end_pt[x], end_pt[y]), 'Failed to orient to target'
+                assert self.widowx.move_to_grasp(end_pt[x], end_pt[y], end_pt[z], theta), \
+                    'Failed to reach end point pose'
+                reached = self.widowx.move_to_vertical(prelift_z)
 
               action_completed.append([w_cid, True])
 
@@ -820,7 +851,8 @@ class Executor:
                       % (new_x, new_y, new_z, new_theta))
                 assert inside_polygon( (new_x, new_y, new_z), 
                     END_EFFECTOR_BOUNDS), 'Grasp not in bounds'
-                assert self.widowx.orient_to_pregrasp(
+                # assert self.widowx.orient_to_pregrasp(
+                assert self.widowx.orient_to_target(
                     new_x, new_y), 'Failed to orient to target'
                 self.record_action(action,"orient_to_pregrasp",
                     [["GOAL_X", new_x],["GOAL_Y", new_y]])

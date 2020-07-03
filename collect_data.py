@@ -102,7 +102,8 @@ def main():
               # get_octomap_pc returns the parameters to plan_graps
               octomap, header = executor.get_octomap_pc()
               if len(args.goal) > 0:
-                if sample_id == args.start:
+                one_in_four = np.random.randint(1, 4)
+                if sample_id == args.start or one_in_four == 1:
                   # only executed first time
                   import pypcd
                   # import pcl_helper
@@ -122,6 +123,14 @@ def main():
               continue
             executor.sample['filtered_pc'] = pc
 
+            # ARD: probably need to remove some bounds in controller.py 
+            # if args.calibrate == 'manual' and sample_id == args.start + 1:
+            #   # do quick pre-analysis calibration of four corners
+            #   corner_grasps = policy.get_calibration_corners(octomap) 
+            #   conf = None
+            #   if corner_grasps != None:
+            #     success, err = executor.calibrate_grasp(corner_grasps, conf,  policy, corners_only=True)
+            #   executor.widowx.move_to_neutral()
             try:
                 if args.method == 'combined':
                     policy = choice(policy_array, 1, policy_array_weights)[-1]
@@ -147,6 +156,7 @@ def main():
 
             confidences = []
             kept_indices = []
+            # always start with the 4 corner nuts
             calib_grasps = []
             policy.clear_target_grasp()
 
@@ -175,20 +185,20 @@ def main():
               print("Calibrate grasps")
               executor.sample['calibrate'] = 'manual'
               executor.publish_grasps(grasps, calib_grasps[0])
-              executor.record_grasp(calib_grasps[0], grasps)
+              # executor.record_grasp(calib_grasps[0], grasps)
               success, err = executor.calibrate_grasp(calib_grasps, confidences,  policy)
 
             elif args.method == 'pickpush':
               prev_action = [] # [c_id, [action], succ/fail, dist_moved]
               if len(args.goal) > 0:
+                executor.publish_grasps(grasps, grasp)
                 goal_plan = goal_state.goal_plan_moves(policy, grasps, confidences)
                 print(goal_plan)
                 # pick/place or push the clusters to become like a goal octomap
                 # success, err = executor.execute_grasp(grasp, grasps, confidences,  policy)
                 pick_result, action_completed = executor.execute_goal_plan(goal_plan)
                 goal_state.record_plan_result(pick_result, action_completed)
-                executor.publish_grasps(grasps, grasp)
-                executor.record_grasp(grasp, grasps)
+                # executor.record_grasp(grasp, grasps)
 
               else:
                 # try up to one grasp per cluster in this "move"
